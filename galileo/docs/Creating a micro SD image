@@ -67,11 +67,3 @@ cp -r * /media/hmiranda/32C7-B012
 
 
 
-Copy all the file in the directory to the card.
-
-cp -r * /media/hmiranda/32C7-B012
-
-
-
-
-
