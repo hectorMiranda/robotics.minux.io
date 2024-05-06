@@ -1,5 +1,6 @@
-Solid works part files for the cover:
-
+MIT-101: robotux electro-mechanical solution.
+========
 Content:
 
-* TBD
+* Solid works assembly files for the MIT 101 project.
+
