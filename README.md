@@ -1,4 +1,4 @@
-MIT-101: robotux
+MIT-101: Marcebot: M1
 ========
 
 This repository contains the code, documentation, and resources for this robotics project, focusing on the development and integration of various robotic components and technologies.
@@ -14,16 +14,18 @@ This repository contains the code, documentation, and resources for this robotic
 ## Introduction
 ![Banner](images/02.jpg)
 
+This project aims to create an advanced robotics platform that integrates various sensors, AI APIs for object identification, and autonomous navigation capabilities to deliver small cargo efficiently.
 
-The Robotics Minux IO project aims to create an advanced robotics platform that integrates various sensors, AI APIs for object identification, and autonomous navigation capabilities to deliver small cargo efficiently.
+This repo contains the produced solid works file and the arduino code use during the PCC semester, new changes will be published here.
 
 ![Robot](images/4.jpg)
 
-## Features
+## Target Features
 
 - **Object Detection:** Utilizes AI APIs to identify objects in real-time.
 - **Autonomous Navigation:** Equipped with sensors for obstacle avoidance.
 - **Modular Design:** Easily extendable with additional plugins and sensors.
+
 
 
 
