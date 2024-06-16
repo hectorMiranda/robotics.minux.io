@@ -35,3 +35,5 @@ This repo contains the produced solid works file and the arduino code use during
 ![IMG_4725](images/IMG_4725.jpeg)
 ![IMG_4811](images/IMG_4811.jpeg)
 ![IMG_4854](images/IMG_4854.jpeg)
+
+[![View PDF](images/m1.jpg)](images/m1.pdf)
