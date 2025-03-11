@@ -300,7 +300,9 @@ void handle_mouse() {
         if (event.y == 0) {
             int x = 2;
             for (int i = 0; i < 4; i++) {
-                if (event.x >= x && event.x < x + strlen(menu_bar.items[i]) + 2) {
+                // Cast strlen to int for proper comparison
+                int item_width = (int)strlen(menu_bar.items[i]) + 2;
+                if (event.x >= x && event.x < x + item_width) {
                     menu_bar.selected = i;
                     return;
                 }
@@ -319,6 +321,7 @@ void handle_mouse() {
 }
 
 void draw_panel(Panel *panel, int width, int height, int startx, int is_active) {
+    (void)startx;  // Explicitly mark parameter as unused
     box(panel->win, 0, 0);
     int max_display = height - 2;
     
@@ -331,7 +334,6 @@ void draw_panel(Panel *panel, int width, int height, int startx, int is_active) 
         panel->start = panel->selected;
 
     for (int i = 0; i < max_display && i + panel->start < panel->count; i++) {
-        int color_pair;
         char *item = panel->items[i + panel->start];
         
         if (i + panel->start == panel->selected && is_active)
@@ -621,13 +623,15 @@ void handle_menu_input(int ch) {
                 if (menu->items[menu->selected].action) {
                     menu->items[menu->selected].action();
                 }
-                // Fall through to ESC to close menu
+                /* fallthrough */
             case KEY_ESC:
                 if (menu->win) {
                     delwin(menu->win);
                     menu->win = NULL;
                 }
                 active_menu = -1;
+                break;
+            default:
                 break;
         }
     } else {
