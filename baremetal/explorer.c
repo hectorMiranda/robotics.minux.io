@@ -214,7 +214,7 @@ void load_file_content(Tab *tab) {
     tab->content_size = ftell(file);
     fseek(file, 0, SEEK_SET);
 
-    tab->content = malloc(tab->content_size + 1);
+    tab->content = (char *)malloc(tab->content_size + 1);
     fread(tab->content, 1, tab->content_size, file);
     tab->content[tab->content_size] = '\0';
     
@@ -226,7 +226,7 @@ void open_file_in_tab(const char *path) {
 
     Tab *tab = &tab_bar.tabs[tab_bar.count];
     strncpy(tab->path, path, MAX_PATH - 1);
-    char *name = strrchr(path, '/');
+    char *name = (char *)strrchr(path, '/');
     strncpy(tab->name, name ? name + 1 : path, MAX_NAME_LENGTH - 1);
     
     tab->scroll_pos = 0;
@@ -531,42 +531,42 @@ void show_help() {
 // Initialize menus
 void init_menus() {
     // File menu
-    static MenuItem file_items[] = {
-        {"New Tab", "Ctrl+T", NULL},
-        {"Open", "Ctrl+O", NULL},
-        {"Save", "Ctrl+S", save_current_tab},
-        {"Close Tab", "Ctrl+W", close_current_tab},
-        {"Exit", "Q", NULL}
+    MenuItem file_items[] = {
+        {(char *)"New Tab", (char *)"Ctrl+T", NULL},
+        {(char *)"Open", (char *)"Ctrl+O", NULL},
+        {(char *)"Save", (char *)"Ctrl+S", save_current_tab},
+        {(char *)"Close Tab", (char *)"Ctrl+W", close_current_tab},
+        {(char *)"Exit", (char *)"Q", NULL}
     };
-    menus[0].name = "File";
+    menus[0].name = (char *)"File";
     menus[0].items = file_items;
     menus[0].count = 5;
     
     // Edit menu
-    static MenuItem edit_items[] = {
-        {"Cut", "Ctrl+X", NULL},
-        {"Copy", "Ctrl+C", NULL},
-        {"Paste", "Ctrl+V", NULL}
+    MenuItem edit_items[] = {
+        {(char *)"Cut", (char *)"Ctrl+X", NULL},
+        {(char *)"Copy", (char *)"Ctrl+C", NULL},
+        {(char *)"Paste", (char *)"Ctrl+V", NULL}
     };
-    menus[1].name = "Edit";
+    menus[1].name = (char *)"Edit";
     menus[1].items = edit_items;
     menus[1].count = 3;
     
     // View menu
-    static MenuItem view_items[] = {
-        {"Toggle Hidden Files", "Ctrl+H", toggle_hidden_files},
-        {"Word Wrap", "Alt+Z", NULL}
+    MenuItem view_items[] = {
+        {(char *)"Toggle Hidden Files", (char *)"Ctrl+H", toggle_hidden_files},
+        {(char *)"Word Wrap", (char *)"Alt+Z", NULL}
     };
-    menus[2].name = "View";
+    menus[2].name = (char *)"View";
     menus[2].items = view_items;
     menus[2].count = 2;
     
     // Help menu
-    static MenuItem help_items[] = {
-        {"Keyboard Shortcuts", "F1", show_help},
-        {"About", "", NULL}
+    MenuItem help_items[] = {
+        {(char *)"Keyboard Shortcuts", (char *)"F1", show_help},
+        {(char *)"About", (char *)"", NULL}
     };
-    menus[3].name = "Help";
+    menus[3].name = (char *)"Help";
     menus[3].items = help_items;
     menus[3].count = 2;
 }
@@ -653,7 +653,8 @@ void handle_menu_input(int ch) {
 int main() {
     // Set up locale and UTF-8 support BEFORE ncurses init
     setlocale(LC_ALL, "");
-    putenv("NCURSES_NO_UTF8_ACS=1");
+    const char *env_var = "NCURSES_NO_UTF8_ACS=1";
+    putenv((char *)env_var);
 
     char current_path[MAX_PATH];
     getcwd(current_path, sizeof(current_path));
@@ -672,10 +673,10 @@ int main() {
 
     // Initialize windows with panels
     menu_bar.win = newwin(1, screen_width, 0, 0);
-    menu_bar.items[0] = "File";
-    menu_bar.items[1] = "Edit";
-    menu_bar.items[2] = "View";
-    menu_bar.items[3] = "Help";
+    menu_bar.items[0] = (char *)"File";
+    menu_bar.items[1] = (char *)"Edit";
+    menu_bar.items[2] = (char *)"View";
+    menu_bar.items[3] = (char *)"Help";
     menu_bar.count = 4;
     menu_bar.selected = -1;
 
