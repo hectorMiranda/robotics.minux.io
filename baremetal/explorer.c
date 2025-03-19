@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <ctype.h>
 #include <time.h>
+#include <locale.h>
 
 #define MAX_ITEMS 1024
 #define MAX_PATH 4096
@@ -650,6 +651,10 @@ void handle_menu_input(int ch) {
 }
 
 int main() {
+    // Set up locale and UTF-8 support BEFORE ncurses init
+    setlocale(LC_ALL, "");
+    putenv("NCURSES_NO_UTF8_ACS=1");
+
     char current_path[MAX_PATH];
     getcwd(current_path, sizeof(current_path));
 

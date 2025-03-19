@@ -1,6 +1,58 @@
-# Baremetal File Explorer
+# Baremetal Minux
 
 A lightweight, ncurses-based file explorer with multi-tab support and modern features, designed for minimal resource usage and maximum efficiency.
+
+
+## Installation and Usage
+
+### Prerequisites
+
+Before compiling and running the `minux` shell, ensure that you have the following packages installed on your Raspberry Pi:
+
+1. **libcamera**: Required for camera functionality.
+2. **ncurses**: Required for terminal UI.
+3. **GPIO library**: Required for controlling GPIO pins.
+
+You can install these packages using the following commands:
+
+```bash
+sudo apt-get update
+sudo apt-get install libcamera-dev libncurses5-dev libncursesw5-dev wiringpi
+```
+
+### Compiling the Program
+
+To compile the `minux` shell, navigate to the project directory and run the following command:
+
+```bash
+make
+```
+
+This will compile the source code and generate the executable.
+
+### Running the Program
+
+Once compiled, you can run the `minux` shell with the following command:
+
+```bash
+./minux
+```
+
+### Testing the Camera
+
+To test the camera functionality, enter the following command in the `minux` shell:
+
+```bash
+test camera
+```
+
+This command captures images using the Arducam camera and saves them in the `test_images` directory.
+
+### Notes
+
+- Ensure that the Arducam camera is properly connected to the Raspberry Pi.
+- Captured images will be saved in the `test_images` directory within the current working directory.
+
 
 ## Technical Overview
 
@@ -184,3 +236,110 @@ This enables:
 3. Custom keybinding support
 4. Search functionality
 5. Split-pane support
+
+## Error Console System
+
+### DOOM-Style Error Terminal
+The system features a retro-style error console inspired by classic DOS games:
+
+1. **Activation**
+   - Automatically appears when errors occur
+   - Toggle with `~` key (like classic DOOM console)
+   - Dismiss with `ESC` key
+   - Error history persists between sessions
+
+2. **Visual Style**
+   - Full-screen overlay with semi-transparent background
+   - DOS-style monospace font
+   - Color-coded error levels:
+     - RED: Critical errors
+     - YELLOW: Warnings
+     - WHITE: Information
+     - GREEN: Success messages
+
+3. **Features**
+   - Scrollable error history
+   - Timestamp for each error
+   - Error categorization
+   - Command history
+   - Error source tracking
+   - Stack trace for critical errors
+
+4. **Error Categories**
+   ```c
+   typedef enum {
+       ERROR_CRITICAL,    // System-level failures
+       ERROR_WARNING,     // Non-fatal warnings
+       ERROR_INFO,        // Information messages
+       ERROR_SUCCESS      // Success confirmations
+   } ErrorLevel;
+   ```
+
+5. **Error Format**
+   ```
+   [TIMESTAMP] <ERROR_LEVEL> [SOURCE] Message
+   Example:
+   [2024-03-14 15:23:45] <CRITICAL> [EXPLORER] Failed to open file: Permission denied
+   Stack trace:
+   -> main() at minux.c:245
+   -> launch_explorer() at minux.c:167
+   -> open_file() at explorer.c:89
+   ```
+
+6. **Integration**
+   - Errors logged to both console and file
+   - Persistent error log in ~/.minux/error.log
+   - Real-time console updates
+   - System status monitoring
+
+7. **Commands**
+   - `clear` - Clear console history
+   - `save` - Save console buffer to file
+   - `filter` - Filter by error level
+   - `search` - Search error messages
+   - `help` - Show console commands
+
+### Status Bar Integration
+The Windows 95-style status bar provides:
+- Current system status
+- Last error message preview
+- Error count indicator
+- Quick access to error console
+
+
+## Camera Functionality
+
+The `minux` shell now supports controlling the Arducam Day-Night Vision camera. You can capture images in both daylight and night vision modes using the following command:
+
+### Command: `test camera`
+
+This command captures images using the Arducam camera and saves them in the `test_images` directory. The process includes:
+
+1. **Creating a Directory**: A folder named `test_images` is created to store the captured images.
+2. **Capturing Daylight Image**: The camera captures an image in daylight mode and saves it as `daylight.jpg`.
+3. **Simulating Night Mode**: The IR-Cut filter is disabled to activate night vision mode, and the camera captures an image saved as `night_vision.jpg`.
+4. **Restoring Day Mode**: The IR-Cut filter is re-enabled, and another image is captured and saved as `restored_daylight.jpg`.
+
+### Usage
+
+To test the camera, simply enter the following command in the `minux` shell:
+
+```bash
+test camera
+```
+
+### Requirements
+
+- Ensure that the Arducam camera is properly connected to the Raspberry Pi.
+- The `libcamera` library must be installed on your system. You can install it using:
+
+```bash
+sudo apt-get install libcamera-dev
+```
+
+### Notes
+
+- The command also controls GPIO pins to manage the IR-Cut filter for switching between day and night modes.
+- Captured images will be saved in the `test_images` directory within the current working directory.
+
+... existing content ...
