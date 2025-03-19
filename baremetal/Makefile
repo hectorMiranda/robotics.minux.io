@@ -1,14 +1,28 @@
-   CC = gcc
-   CFLAGS = -Wall -Wextra -g -I/usr/include/libcamera -I/usr/include/pigpio
-   LDFLAGS = -lncurses -lmenu -lpanel -lpigpio
+CC = gcc
+CFLAGS = -Wall -Wextra -g -I/usr/include/libcamera -I/usr/include/pigpio
+LDFLAGS = -lncurses -lmenu -lpanel -lpigpio
 
-   all: minux
+all: minux explorer
 
-   minux: minux.o
-       $(CC) $(CFLAGS) -o minux minux.o $(LDFLAGS)
+minux: minux.o error_console.o
+	$(CC) $(CFLAGS) -o minux minux.o error_console.o $(LDFLAGS)
 
-   minux.o: minux.c
-       $(CC) $(CFLAGS) -c minux.c
+explorer: explorer.o
+	$(CC) $(CFLAGS) -o explorer explorer.o $(LDFLAGS)
 
-   clean:
-       rm -f minux minux.o
+minux.o: minux.c error_console.h
+	$(CC) $(CFLAGS) -c minux.c
+
+explorer.o: explorer.c
+	$(CC) $(CFLAGS) -c explorer.c
+
+error_console.o: error_console.c error_console.h
+	$(CC) $(CFLAGS) -c error_console.c
+
+debug: CFLAGS += -DDEBUG
+debug: all
+
+clean:
+	rm -f *.o minux explorer
+
+.PHONY: all debug clean 
