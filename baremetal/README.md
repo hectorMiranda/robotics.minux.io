@@ -17,7 +17,7 @@ You can install these packages using the following commands:
 
 ```bash
 sudo apt-get update
-sudo apt-get install libcamera-dev libncurses5-dev libncursesw5-dev wiringpi
+sudo apt-get install libcamera-dev libncurses5-dev libncursesw5-dev pigpio
 ```
 
 ### Compiling the Program
