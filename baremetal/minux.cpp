@@ -10,6 +10,9 @@
 #include <errno.h>
 #include <panel.h>
 #include <ctype.h>  // For isspace()
+#include <termios.h> // For serial communication
+#include <fcntl.h>   // For file control
+#include <signal.h>  // For signal handling
 #include "error_console.h"
 #include <locale.h>
 
@@ -29,6 +32,24 @@
 #define MAX_ARGS 32
 #define MAX_PATH 4096
 #define STATUS_BAR_HEIGHT 1
+
+// Serial communication structure
+typedef struct {
+    int fd;
+    struct termios old_tio;
+    int baud_rate;
+    char port[256];
+    int is_connected;
+} SerialPort;
+
+// Function declarations for serial communication
+void serial_monitor(void);
+static int open_serial_port(const char *port, int baud_rate);
+static void close_serial_port(SerialPort *sp);
+static void configure_serial_port(int fd, struct termios *tio);
+static void handle_serial_input(SerialPort *sp);
+static void handle_serial_output(SerialPort *sp);
+static void cleanup_serial(void);
 
 // Command function prototypes
 void cmd_help(void);
@@ -64,6 +85,7 @@ Command commands[] = {
     {"gpio", cmd_gpio, "Display GPIO status"},
     {"explorer", launch_explorer, "Launch file explorer"},
     {"test camera", test_camera, "Test the Arducam camera"},
+    {"serial", serial_monitor, "Open serial monitor for device communication"},
     {NULL, NULL, NULL}
 };
 
@@ -72,6 +94,12 @@ char current_path[MAX_PATH];
 ErrorConsole *error_console;
 WINDOW *status_bar;
 int screen_width, screen_height;
+SerialPort serial_port = {
+    .fd = -1,
+    .baud_rate = 115200,
+    .is_connected = 0,
+    .port = {0}
+};
 
 // Function declarations
 void init_windows(void);
@@ -531,6 +559,174 @@ static int levenshtein_distance(const char *s1, const char *s2) {
     return matrix[len1][len2];
 }
 
+// Serial monitor implementation
+static int open_serial_port(const char *port, int baud_rate) {
+    (void)baud_rate;  // Mark as intentionally unused
+    int fd = open(port, O_RDWR | O_NOCTTY | O_NONBLOCK);
+    if (fd < 0) {
+        log_error(error_console, ERROR_WARNING, "SERIAL", 
+                  "Error opening port %s: %s", port, strerror(errno));
+        return -1;
+    }
+
+    struct termios tio;
+    if (tcgetattr(fd, &tio) < 0) {
+        close(fd);
+        log_error(error_console, ERROR_WARNING, "SERIAL", 
+                  "Error getting port attributes: %s", strerror(errno));
+        return -1;
+    }
+
+    // Save old settings
+    memcpy(&serial_port.old_tio, &tio, sizeof(struct termios));
+
+    // Configure port
+    configure_serial_port(fd, &tio);
+
+    // Apply settings
+    if (tcsetattr(fd, TCSANOW, &tio) < 0) {
+        close(fd);
+        log_error(error_console, ERROR_WARNING, "SERIAL", 
+                  "Error setting port attributes: %s", strerror(errno));
+        return -1;
+    }
+
+    // Set up non-blocking I/O
+    int flags = fcntl(fd, F_GETFL, 0);
+    fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+
+    return fd;
+}
+
+static void configure_serial_port(int fd, struct termios *tio) {
+    (void)fd;  // Mark as intentionally unused
+    // Set baud rate
+    speed_t baud;
+    switch (serial_port.baud_rate) {
+        case 9600: baud = B9600; break;
+        case 19200: baud = B19200; break;
+        case 38400: baud = B38400; break;
+        case 57600: baud = B57600; break;
+        case 115200: baud = B115200; break;
+        case 230400: baud = B230400; break;
+        default: baud = B115200; break;
+    }
+
+    cfsetispeed(tio, baud);
+    cfsetospeed(tio, baud);
+
+    // Configure other settings
+    tio->c_cflag &= ~PARENB;  // No parity
+    tio->c_cflag &= ~CSTOPB;  // 1 stop bit
+    tio->c_cflag &= ~CSIZE;
+    tio->c_cflag |= CS8;      // 8 data bits
+    tio->c_cflag |= CREAD;    // Enable receiver
+    tio->c_cflag |= CLOCAL;   // Ignore modem control lines
+    tio->c_cflag |= CRTSCTS;  // Enable hardware flow control
+
+    // Raw input
+    tio->c_lflag &= ~ICANON;
+    tio->c_lflag &= ~ECHO;
+    tio->c_lflag &= ~ECHOE;
+    tio->c_lflag &= ~ECHONL;
+    tio->c_lflag &= ~ISIG;
+
+    // Raw output
+    tio->c_oflag &= ~OPOST;
+    tio->c_oflag &= ~ONLCR;
+}
+
+static void close_serial_port(SerialPort *sp) {
+    if (sp->fd >= 0) {
+        // Restore old settings
+        tcsetattr(sp->fd, TCSANOW, &sp->old_tio);
+        close(sp->fd);
+        sp->fd = -1;
+        sp->is_connected = 0;
+    }
+}
+
+static void handle_serial_input(SerialPort *sp) {
+    char buffer[1024];
+    int n = read(sp->fd, buffer, sizeof(buffer) - 1);
+    if (n > 0) {
+        buffer[n] = '\0';
+        printw("%s", buffer);
+        refresh();
+    }
+}
+
+static void handle_serial_output(SerialPort *sp) {
+    char buffer[1024];
+    int n = read(stdin->_file, buffer, sizeof(buffer) - 1);
+    if (n > 0) {
+        buffer[n] = '\0';
+        write(sp->fd, buffer, n);
+    }
+}
+
+static void cleanup_serial(void) {
+    close_serial_port(&serial_port);
+}
+
+void serial_monitor(void) {
+    // Create a new window for serial monitor
+    WINDOW *serial_win = newwin(screen_height - 2, screen_width, 0, 0);
+    keypad(serial_win, TRUE);
+    scrollok(serial_win, TRUE);
+
+    // Show connection dialog
+    clear();
+    mvprintw(1, 1, "Serial Monitor Configuration");
+    mvprintw(3, 1, "Enter port (e.g., /dev/ttyUSB0): ");
+    refresh();
+
+    char port[256];
+    int pos = 0;
+    int ch;
+    while ((ch = getch()) != '\n' && pos < 255) {
+        if (ch >= 32 && ch <= 126) {
+            port[pos++] = ch;
+            printw("%c", ch);
+            refresh();
+        }
+    }
+    port[pos] = '\0';
+
+    // Default baud rate
+    serial_port.baud_rate = 115200;
+
+    // Try to open the port
+    serial_port.fd = open_serial_port(port, serial_port.baud_rate);
+    if (serial_port.fd < 0) {
+        mvprintw(5, 1, "Failed to open port. Press any key to continue...");
+        refresh();
+        getch();
+        delwin(serial_win);
+        return;
+    }
+
+    strncpy(serial_port.port, port, sizeof(serial_port.port) - 1);
+    serial_port.is_connected = 1;
+
+    // Set up signal handler for cleanup
+    signal(SIGINT, (void (*)(int))cleanup_serial);
+
+    // Main serial monitor loop
+    clear();
+    mvprintw(0, 1, "Serial Monitor - %s @ %d baud", port, serial_port.baud_rate);
+    mvprintw(1, 1, "Press Ctrl+C to exit");
+    refresh();
+
+    while (serial_port.is_connected) {
+        handle_serial_input(&serial_port);
+        handle_serial_output(&serial_port);
+        usleep(10000);  // 10ms delay to prevent CPU hogging
+    }
+
+    delwin(serial_win);
+}
+
 int main(void) {
     // Set up locale and UTF-8 support BEFORE ncurses init
     setlocale(LC_ALL, "");
@@ -541,7 +737,7 @@ int main(void) {
     getcwd(current_path, sizeof(current_path));
 
     // Show welcome message
-    printw("Welcome to MINUX %s\n", VERSION);
+    printw("MINUX %s\n", VERSION);
     printw("Type 'help' for available commands\n\n");
 
     char cmd[MAX_CMD_LENGTH];
