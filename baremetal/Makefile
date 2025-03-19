@@ -1,4 +1,4 @@
-CC = gcc
+CC = g++
 CFLAGS = -Wall -Wextra -g -I/usr/include/libcamera -I/usr/include/pigpio
 LDFLAGS = -lncurses -lmenu -lpanel -lpigpio
 
