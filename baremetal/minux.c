@@ -12,6 +12,8 @@
 #include <ctype.h>  // For isspace()
 #include "error_console.h"
 #include <locale.h>
+#include <libcamera/libcamera.h> // Include for libcamera
+#include <pigpio.h> // Include for GPIO control
 
 #define VERSION "0.0.1"
 #define MAX_CMD_LENGTH 256
@@ -30,6 +32,8 @@ void cmd_cd(const char *path);
 void cmd_clear(void);
 void cmd_gpio(void);
 void launch_explorer(void);
+void capture_image(const char *filename);
+void test_camera(void);
 
 // Command structure
 typedef struct {
@@ -50,6 +54,7 @@ Command commands[] = {
     {"clear", cmd_clear, "Clear screen"},
     {"gpio", cmd_gpio, "Display GPIO status"},
     {"explorer", launch_explorer, "Launch file explorer"},
+    {"test camera", test_camera, "Test the Arducam camera"},
     {NULL, NULL, NULL}
 };
 
@@ -357,6 +362,39 @@ void launch_explorer(void) {
     refresh();
 }
 
+void capture_image(const char *filename) {
+    // Placeholder for actual camera initialization and capture logic
+    printf("Capturing image: %s\n", filename);
+    // Here you would add the actual code to capture the image using libcamera
+}
+
+void test_camera() {
+    // Create a folder for test images
+    system("mkdir -p test_images");
+
+    // Capture Daylight Image
+    capture_image("test_images/daylight.jpg");
+
+    // Simulate Night Mode
+    printf("Turning on Night Vision...\n");
+    system("gpio -g mode 4 out");
+    system("gpio -g write 4 0"); // Disable IR-Cut Filter (Activate IR mode)
+    sleep(2); // Allow time for adjustment
+
+    // Capture Night Vision Image
+    capture_image("test_images/night_vision.jpg");
+
+    // Restore Day Mode
+    printf("Restoring Day Vision...\n");
+    system("gpio -g write 4 1"); // Enable IR-Cut Filter (Day Mode)
+    sleep(2); // Allow time for adjustment
+
+    // Capture restored image
+    capture_image("test_images/restored_daylight.jpg");
+
+    printf("Test images saved in 'test_images/' directory.\n");
+}
+
 void handle_command(const char *cmd) {
     char *args[MAX_ARGS];
     char cmd_copy[MAX_CMD_LENGTH];
@@ -390,6 +428,9 @@ void handle_command(const char *cmd) {
     }
     else if (strcmp(args[0], "cd") == 0) {
         cmd_cd(argc > 1 ? args[1] : NULL);
+    }
+    else if (strcmp(args[0], "test camera") == 0) {
+        test_camera(); // Call the test camera function
     }
     else {
         // Look for command in command table
