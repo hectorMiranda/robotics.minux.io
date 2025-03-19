@@ -14,12 +14,14 @@
 #include <locale.h>
 
 // Conditionally include libcamera and pigpio only if available
-#if __has_include(<libcamera/libcamera.h>)
-#include <libcamera/libcamera.h>
-#endif
+#ifdef __arm__
+    #if __has_include(<libcamera/libcamera.h>)
+    #include <libcamera/libcamera.h>
+    #endif
 
-#if __has_include(<pigpio.h>)
-#include <pigpio.h>
+    #if __has_include(<pigpio.h>)
+    #include <pigpio.h>
+    #endif
 #endif
 
 #define VERSION "0.0.1"

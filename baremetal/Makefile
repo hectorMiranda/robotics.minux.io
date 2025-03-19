@@ -1,6 +1,21 @@
 CC = g++
-CFLAGS = -Wall -Wextra -g -I/usr/include/libcamera -I/usr/include/pigpio
-LDFLAGS = -lncurses -lmenu -lpanel -lpigpio
+CFLAGS = -Wall -Wextra -g
+
+# Add include paths only if they exist
+ifneq ($(wildcard /usr/include/libcamera),)
+    CFLAGS += -I/usr/include/libcamera
+endif
+
+ifneq ($(wildcard /usr/include/pigpio),)
+    CFLAGS += -I/usr/include/pigpio
+endif
+
+LDFLAGS = -lncurses -lmenu -lpanel
+
+# Detect if we're on Raspberry Pi
+ifeq ($(shell uname -m), armv7l)
+    LDFLAGS += -lpigpio
+endif
 
 all: minux explorer
 
