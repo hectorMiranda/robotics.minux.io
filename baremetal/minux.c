@@ -12,8 +12,15 @@
 #include <ctype.h>  // For isspace()
 #include "error_console.h"
 #include <locale.h>
-#include <libcamera/libcamera.h> // Include for libcamera
-#include <pigpio.h> // Include for GPIO control
+
+// Conditionally include libcamera and pigpio only if available
+#if __has_include(<libcamera/libcamera.h>)
+#include <libcamera/libcamera.h>
+#endif
+
+#if __has_include(<pigpio.h>)
+#include <pigpio.h>
+#endif
 
 #define VERSION "0.0.1"
 #define MAX_CMD_LENGTH 256
@@ -181,7 +188,7 @@ void cmd_ls(const char *path) {
             x += 22;
         }
     }
-    mvprintw(y + 2, 1, "");  // Move cursor to end
+    mvprintw(y + 2, 1, " ");  // Move cursor to end with a space
     refresh();
     closedir(dir);
 }
@@ -366,33 +373,66 @@ void capture_image(const char *filename) {
     // Placeholder for actual camera initialization and capture logic
     printf("Capturing image: %s\n", filename);
     // Here you would add the actual code to capture the image using libcamera
+    
+    // For now, create an empty file to simulate capturing an image
+    FILE *fp = fopen(filename, "w");
+    if (fp) {
+        fprintf(fp, "Simulated camera image\n");
+        fclose(fp);
+    }
 }
 
 void test_camera() {
     // Create a folder for test images
     system("mkdir -p test_images");
 
+    // Display information in the terminal
+    clear();
+    mvprintw(1, 1, "Testing Arducam Day-Night Vision Camera");
+    mvprintw(3, 1, "Capturing Daylight Image...");
+    refresh();
+    
     // Capture Daylight Image
     capture_image("test_images/daylight.jpg");
-
+    
+    mvprintw(4, 1, "Turning on Night Vision...");
+    refresh();
+    
     // Simulate Night Mode
-    printf("Turning on Night Vision...\n");
+#if __has_include(<pigpio.h>)
     system("gpio -g mode 4 out");
     system("gpio -g write 4 0"); // Disable IR-Cut Filter (Activate IR mode)
+#else
+    mvprintw(5, 1, "Note: GPIO control not available (pigpio not found)");
+    refresh();
+#endif
     sleep(2); // Allow time for adjustment
 
+    mvprintw(6, 1, "Capturing Night Vision Image...");
+    refresh();
+    
     // Capture Night Vision Image
     capture_image("test_images/night_vision.jpg");
-
+    
+    mvprintw(7, 1, "Restoring Day Vision...");
+    refresh();
+    
     // Restore Day Mode
-    printf("Restoring Day Vision...\n");
+#if __has_include(<pigpio.h>)
     system("gpio -g write 4 1"); // Enable IR-Cut Filter (Day Mode)
+#endif
     sleep(2); // Allow time for adjustment
 
+    mvprintw(8, 1, "Capturing Restored Daylight Image...");
+    refresh();
+    
     // Capture restored image
     capture_image("test_images/restored_daylight.jpg");
 
-    printf("Test images saved in 'test_images/' directory.\n");
+    mvprintw(10, 1, "Test images saved in 'test_images/' directory.");
+    mvprintw(11, 1, "Press any key to continue...");
+    refresh();
+    getch();
 }
 
 void handle_command(const char *cmd) {
@@ -408,6 +448,12 @@ void handle_command(const char *cmd) {
     while (end > start && isspace(*end)) *end-- = '\0';
     
     if (!*start) return;  // Empty command
+    
+    // Handle "test camera" as a special case
+    if (strcmp(start, "test camera") == 0) {
+        test_camera();
+        return;
+    }
     
     // Split command into arguments
     int argc = 0;
@@ -428,9 +474,6 @@ void handle_command(const char *cmd) {
     }
     else if (strcmp(args[0], "cd") == 0) {
         cmd_cd(argc > 1 ? args[1] : NULL);
-    }
-    else if (strcmp(args[0], "test camera") == 0) {
-        test_camera(); // Call the test camera function
     }
     else {
         // Look for command in command table
@@ -489,7 +532,8 @@ static int levenshtein_distance(const char *s1, const char *s2) {
 int main(void) {
     // Set up locale and UTF-8 support BEFORE ncurses init
     setlocale(LC_ALL, "");
-    putenv("NCURSES_NO_UTF8_ACS=1");
+    const char *env_var = "NCURSES_NO_UTF8_ACS=1";
+    putenv((char *)env_var);
 
     init_windows();
     getcwd(current_path, sizeof(current_path));

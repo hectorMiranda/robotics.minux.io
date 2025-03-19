@@ -44,14 +44,14 @@ static char* get_log_path(void) {
     }
     
     // Create .minux directory if it doesn't exist
-    char *dir_path = malloc(PATH_MAX);
+    char *dir_path = (char *)malloc(PATH_MAX);
     if (!dir_path) return NULL;
     
     snprintf(dir_path, PATH_MAX, "%s/.minux", home);
     mkdir(dir_path, 0755);
     
     // Create full path to log file
-    char *log_path = malloc(PATH_MAX);
+    char *log_path = (char *)malloc(PATH_MAX);
     if (!log_path) {
         free(dir_path);
         return NULL;
@@ -67,9 +67,10 @@ static char* get_log_path(void) {
 ErrorConsole* error_console_init(void) {
     // Set up UTF-8 support
     setlocale(LC_ALL, "");
-    putenv("NCURSES_NO_UTF8_ACS=1");
+    const char *env_var = "NCURSES_NO_UTF8_ACS=1";
+    putenv((char *)env_var);
 
-    ErrorConsole *console = malloc(sizeof(ErrorConsole));
+    ErrorConsole *console = (ErrorConsole *)malloc(sizeof(ErrorConsole));
     if (!console) return NULL;
 
     // Initialize console state
@@ -259,7 +260,7 @@ void error_console_handle_input(ErrorConsole *console, int ch) {
 
 void log_error(ErrorConsole *console, ErrorLevel level, const char *source,
                const char *format, ...) {
-    ErrorMessage *msg = malloc(sizeof(ErrorMessage));
+    ErrorMessage *msg = (ErrorMessage *)malloc(sizeof(ErrorMessage));
     if (!msg) return;
 
     // Get current timestamp
