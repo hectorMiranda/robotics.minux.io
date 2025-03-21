@@ -21,30 +21,31 @@
 #include <string>
 #include <cstring>
 
+// Define GPIO constants for systems without pigpio
+#define PI_INPUT 0
+#define PI_OUTPUT 1
+#define PI_ALT0 4
+
+// Try to include pigpio only if it's available
+#if defined(__has_include)
+  #if __has_include(<pigpio.h>)
+    #define HAS_PIGPIO 1
+    extern "C" {
+      #include <pigpio.h>
+    }
+  #else
+    #define HAS_PIGPIO 0
+  #endif
+#else
+  #define HAS_PIGPIO 0
+#endif
+
 // First check if we're on ARM architecture (like Raspberry Pi)
 #ifdef __arm__
     // Then check for libcamera
-    #if __has_include(<libcamera/libcamera.h>)
+    #if defined(__has_include) && __has_include(<libcamera/libcamera.h>)
         #include <libcamera/libcamera.h>
     #endif
-
-    // Check for pigpio and include it properly with C linkage
-    #if __has_include(<pigpio.h>)
-        extern "C" {
-            #include <pigpio.h>
-        }
-    #endif
-#endif
-
-// Define GPIO constants in case they're not provided by pigpio
-#ifndef PI_INPUT
-    #define PI_INPUT 0
-#endif
-#ifndef PI_OUTPUT
-    #define PI_OUTPUT 1
-#endif
-#ifndef PI_ALT0
-    #define PI_ALT0 4
 #endif
 
 #define VERSION "0.0.1"
@@ -428,7 +429,7 @@ void cmd_gpio(void) {
         return;
     }
     
-#if defined(__arm__) && defined(__has_include) && __has_include(<pigpio.h>)
+#if HAS_PIGPIO
     // Try to initialize pigpio
     int pi_init = gpioInitialise();
     if (pi_init < 0) {
@@ -500,10 +501,14 @@ void cmd_gpio(void) {
     gpioTerminate();
 #else
     // pigpio library not available
-    mvprintw(y++, 1, "GPIO library (pigpio) is not available on this system.");
-    mvprintw(y++, 1, "Please compile with pigpio support to use GPIO functionality.");
+    mvprintw(y++, 1, "GPIO library (pigpio) is not installed on this system.");
+    mvprintw(y++, 1, "Please install the libpigpio-dev package to use GPIO functionality:");
+    mvprintw(y++, 1, "    sudo apt-get update");
+    mvprintw(y++, 1, "    sudo apt-get install libpigpio-dev");
+    mvprintw(y++, 1, "Then recompile the application with: make clean && make");
+    
     log_error(error_console, ERROR_WARNING, "MINUX", 
-              "GPIO functionality requires pigpio library.");
+              "GPIO functionality requires the pigpio library to be installed.");
 #endif
     
     mvprintw(y + 2, 1, "Press any key to continue...");

@@ -4,8 +4,11 @@ LDFLAGS = -lncurses -lmenu -lpanel -lpthread -lrt
 
 # Optional libraries - only link if available
 OPTIONAL_LIBS = 
-ifneq ($(shell pkg-config --exists libpigpio && echo yes),)
+ifneq ($(shell pkg-config --exists libpigpio 2>/dev/null && echo yes),)
     OPTIONAL_LIBS += -lpigpio
+    CXXFLAGS += -DHAS_PIGPIO=1
+else
+    CXXFLAGS += -DHAS_PIGPIO=0
 endif
 
 # Define targets
