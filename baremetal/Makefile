@@ -2,16 +2,54 @@ CXX = g++
 CXXFLAGS = -Wall -Wextra -g -I.
 LDFLAGS = -lncurses -lmenu -lpanel -lpthread -lrt
 
-# Check for pigpio in multiple ways
+# Improved Raspberry Pi detection
+IS_PI = 0
+
+# First check directly for Raspberry Pi mention in model file
+PI_MODEL_CHECK = $(shell cat /sys/firmware/devicetree/base/model 2>/dev/null | grep -q "Raspberry Pi" && echo yes)
+ifneq ($(PI_MODEL_CHECK),)
+    IS_PI = 1
+endif
+
+# Second, check the CPU info for BCM or Raspberry
+ifeq ($(IS_PI),0)
+    PI_CPU_CHECK = $(shell grep -q -E "BCM|Raspberry" /proc/cpuinfo 2>/dev/null && echo yes)
+    ifneq ($(PI_CPU_CHECK),)
+        IS_PI = 1
+    endif
+endif
+
+# Third, check /dev/gpiomem which exists on Raspberry Pi
+ifeq ($(IS_PI),0)
+    PI_GPIO_CHECK = $(shell test -e /dev/gpiomem && echo yes)
+    ifneq ($(PI_GPIO_CHECK),)
+        IS_PI = 1
+    endif
+endif
+
+# Manual override - uncomment if needed
+# For Ubuntu development: leave commented
+# For Raspberry Pi if detection fails: uncomment
+# IS_PI = 1
+
+# Check for pigpio header and library
 HAS_PIGPIO = 0
-PIGPIO_AVAILABLE = $(shell pkg-config --exists libpigpio 2>/dev/null && echo yes)
-ifneq ($(PIGPIO_AVAILABLE),)
-    HAS_PIGPIO = 1
-else
-    # Try direct library check as fallback
-    PIGPIO_LIB = $(shell test -f /usr/lib/libpigpio.so && echo yes)
+PIGPIO_HEADER = $(shell test -f /usr/include/pigpio.h && echo yes)
+
+ifneq ($(PIGPIO_HEADER),)
+    # Check for pigpio library only if header exists
+    PIGPIO_LIB = $(shell test -f /usr/lib/libpigpio.so -o -f /usr/lib/*/libpigpio.so && echo yes)
     ifneq ($(PIGPIO_LIB),)
         HAS_PIGPIO = 1
+    endif
+endif
+
+# On Raspberry Pi, we prefer to have pigpio, but don't force it if not installed
+ifeq ($(IS_PI),1)
+    ifeq ($(HAS_PIGPIO),1)
+        $(info Raspberry Pi detected with pigpio library - enabling pigpio support)
+    else
+        $(info Raspberry Pi detected but pigpio library not found - building without pigpio)
     endif
 endif
 
@@ -34,9 +72,20 @@ EXPLORER_SOURCES = explorer.cpp error_console.cpp
 MINUX_OBJECTS = $(MINUX_SOURCES:.cpp=.o)
 EXPLORER_OBJECTS = $(EXPLORER_SOURCES:.cpp=.o)
 
-# Show configuration
+# Show detailed configuration information
 all:
-	@echo "Building with HAS_PIGPIO=$(HAS_PIGPIO)"
+	@echo "--- Build Configuration ---"
+	@if [ "$(IS_PI)" = "1" ]; then \
+		echo "Raspberry Pi detection: $(IS_PI)"; \
+	else \
+		echo "Building for non-Raspberry Pi platform (like Ubuntu)"; \
+	fi
+	@echo "PIGPIO support: $(HAS_PIGPIO)"
+	@if [ "$(IS_PI)" = "1" ] && [ "$(HAS_PIGPIO)" = "0" ]; then \
+		echo "NOTE: Building without pigpio on Raspberry Pi."; \
+		echo "To add hardware GPIO support: sudo apt-get install libpigpio-dev"; \
+		echo "For Pi 5, you may need newer alternatives like libgpiod-dev and gpiod"; \
+	fi
 	@$(MAKE) build
 
 # Actual build

@@ -403,17 +403,35 @@ void cmd_gpio(void) {
     // Define y here, outside the conditional blocks
     int y = 1;
     
-    // Check if we're on a Raspberry Pi by checking for the model file
+    // Check if we're on a Raspberry Pi using multiple methods
     bool is_raspberry_pi = false;
+    char model[256] = {0};
+    
+    // Method 1: Check /sys/firmware/devicetree/base/model
     FILE *model_file = fopen("/sys/firmware/devicetree/base/model", "r");
     if (model_file) {
-        char model[256];
         if (fgets(model, sizeof(model), model_file)) {
             if (strstr(model, "Raspberry Pi") != NULL) {
                 is_raspberry_pi = true;
             }
         }
         fclose(model_file);
+    }
+    
+    // Method 2: Check /proc/cpuinfo for Raspberry Pi-specific hardware
+    if (!is_raspberry_pi) {
+        FILE *cpuinfo = fopen("/proc/cpuinfo", "r");
+        if (cpuinfo) {
+            char line[256];
+            while (fgets(line, sizeof(line), cpuinfo)) {
+                if (strstr(line, "BCM") || strstr(line, "Raspberry")) {
+                    is_raspberry_pi = true;
+                    snprintf(model, sizeof(model), "Raspberry Pi (detected via cpuinfo)");
+                    break;
+                }
+            }
+            fclose(cpuinfo);
+        }
     }
     
     if (!is_raspberry_pi) {
@@ -426,86 +444,375 @@ void cmd_gpio(void) {
         return;
     }
     
+    mvprintw(y++, 1, "Raspberry Pi detected: %s", model);
+    
+    // For Raspberry Pi 5, check model string
+    bool model_5 = strstr(model, "Raspberry Pi 5") != NULL;
+    
 #if HAS_PIGPIO
+    // Only declare this variable when HAS_PIGPIO is defined to avoid unused variable warning
+    bool using_direct_access = false;
+    
     // Try to initialize pigpio
-    int pi_init = gpioInitialise();
+    int pi_init = -1;
+    
+    // Additional check specifically for Pi 5
+    if (model_5) {
+        mvprintw(y++, 1, "Raspberry Pi 5 detected - pigpio might need updating");
+        mvprintw(y++, 1, "Will attempt to use gpiochip interface if pigpio fails");
+    }
+    
+    // Try initializing pigpio
+    pi_init = gpioInitialise();
+    
     if (pi_init < 0) {
-        mvprintw(y++, 1, "Failed to initialize GPIO interface. Error code: %d", pi_init);
-        mvprintw(y++, 1, "Make sure pigpio daemon is running with: sudo pigpiod");
-        mvprintw(y++, 1, "Or run MINUX with sudo privileges");
-        refresh();
-        log_error(error_console, ERROR_WARNING, "MINUX", 
-                  "Failed to initialize GPIO interface. Try running: sudo pigpiod");
-        mvprintw(y + 2, 1, "Press any key to continue...");
-        refresh();
-        getch();
-        return;
+        mvprintw(y++, 1, "Failed to initialize pigpio interface. Error code: %d", pi_init);
+        
+        if (model_5) {
+            mvprintw(y++, 1, "This is expected since pigpio hasn't been updated for Pi 5 yet.");
+            mvprintw(y++, 1, "Using direct GPIO access via modern gpiod interface");
+            using_direct_access = true;
+        } else {
+            mvprintw(y++, 1, "Make sure pigpio daemon is running with: sudo pigpiod");
+            mvprintw(y++, 1, "Or run MINUX with sudo privileges");
+            refresh();
+            log_error(error_console, ERROR_WARNING, "MINUX", 
+                      "Failed to initialize GPIO interface. Try running: sudo pigpiod");
+            mvprintw(y + 2, 1, "Press any key to continue...");
+            refresh();
+            getch();
+            return;
+        }
     }
     
-    // Display GPIO status in a formatted table
-    y = 1;  // Reset y here
-    mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi 3B--+---+------+---------+-----+-----+");
-    mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
-    mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
-    
-    // Print 3.3V, 5V, and GND (0V) pins
-    mvprintw(y++, 1, "|     |     |    3.3v |      |   |  1 || 2  |   |      | 5v      |     |     |");
-    
-    // Loop through pins by physical order
-    for (int physical = 3; physical <= 40; physical += 2) {
-        char leftPin[100] = "|     |     |      0v |      |   |";
-        char rightPin[100] = "|   |      | 0v      |     |     |";
+    // If we need to use direct access or if pigpio initialization failed
+    if (using_direct_access) {
+        // Display table header
+        y = 5;  // Reset y to leave space for messages above
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi %s--+---+------+---------+-----+-----+", 
+                model_5 ? "5" : "3B");
+        mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
         
-        // Find info for left pin (odd numbers)
-        for (int i = 0; pinInfoTable[i].name != NULL; i++) {
-            if (pinInfoTable[i].physical == physical) {
-                int mode = gpioGetMode(pinInfoTable[i].bcm);
-                int value = gpioRead(pinInfoTable[i].bcm);
-                sprintf(leftPin, "| %3d | %3d | %7s | %4s | %d |", 
-                        pinInfoTable[i].bcm, 
-                        pinInfoTable[i].wPi, 
-                        pinInfoTable[i].name, 
-                        mode == PI_INPUT ? "IN" : (mode == PI_OUTPUT ? "OUT" : "ALT"),
-                        value);
-                break;
+        // Print 3.3V, 5V, and GND (0V) pins
+        mvprintw(y++, 1, "|     |     |    3.3v |      |   |  1 || 2  |   |      | 5v      |     |     |");
+        
+        // Try to use the gpiod utility if available (newer Raspberry Pi OS)
+        FILE *gpio_cmd = popen("which gpioinfo >/dev/null 2>&1 && gpioinfo", "r");
+        bool used_gpiod = false;
+        
+        if (gpio_cmd) {
+            // Read all GPIO info into a buffer for parsing
+            char buffer[10240] = {0};
+            size_t total_read = 0;
+            size_t bytes_read;
+            
+            while ((bytes_read = fread(buffer + total_read, 1, sizeof(buffer) - total_read - 1, gpio_cmd)) > 0) {
+                total_read += bytes_read;
+                if (total_read >= sizeof(buffer) - 1) break;
+            }
+            buffer[total_read] = '\0';
+            
+            if (total_read > 0) {
+                used_gpiod = true;
+                
+                // Loop through pins by physical order
+                for (int physical = 3; physical <= 40; physical += 2) {
+                    char leftPin[100] = "|     |     |      0v |      |   |";
+                    char rightPin[100] = "|   |      | 0v      |     |     |";
+                    
+                    // Find info for left pin (odd numbers)
+                    for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+                        if (pinInfoTable[i].physical == physical) {
+                            int bcm_pin = pinInfoTable[i].bcm;
+                            
+                            // Try to find this pin in the gpioinfo output
+                            char search_str[20];
+                            sprintf(search_str, "GPIO %d:", bcm_pin);
+                            
+                            char *pin_info = strstr(buffer, search_str);
+                            char mode[5] = "---";
+                            int value = -1;
+                            
+                            if (pin_info) {
+                                // Parse line to extract mode and value
+                                if (strstr(pin_info, "input")) {
+                                    strcpy(mode, "IN");
+                                } else if (strstr(pin_info, "output")) {
+                                    strcpy(mode, "OUT");
+                                }
+                                
+                                // Extract value
+                                if (strstr(pin_info, "active-high")) {
+                                    value = strstr(pin_info, "val:1") ? 1 : 0;
+                                } else {
+                                    value = strstr(pin_info, "val:1") ? 0 : 1; // Inverted logic for active-low
+                                }
+                            }
+                            
+                            sprintf(leftPin, "| %3d | %3d | %7s | %4s | %d |", 
+                                    pinInfoTable[i].bcm, 
+                                    pinInfoTable[i].wPi, 
+                                    pinInfoTable[i].name, 
+                                    mode,
+                                    value);
+                            break;
+                        }
+                    }
+                    
+                    // Find info for right pin (even numbers)
+                    for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+                        if (pinInfoTable[i].physical == physical + 1) {
+                            int bcm_pin = pinInfoTable[i].bcm;
+                            
+                            // Try to find this pin in the gpioinfo output
+                            char search_str[20];
+                            sprintf(search_str, "GPIO %d:", bcm_pin);
+                            
+                            char *pin_info = strstr(buffer, search_str);
+                            char mode[5] = "---";
+                            int value = -1;
+                            
+                            if (pin_info) {
+                                // Parse line to extract mode and value
+                                if (strstr(pin_info, "input")) {
+                                    strcpy(mode, "IN");
+                                } else if (strstr(pin_info, "output")) {
+                                    strcpy(mode, "OUT");
+                                }
+                                
+                                // Extract value
+                                if (strstr(pin_info, "active-high")) {
+                                    value = strstr(pin_info, "val:1") ? 1 : 0;
+                                } else {
+                                    value = strstr(pin_info, "val:1") ? 0 : 1; // Inverted logic for active-low
+                                }
+                            }
+                            
+                            sprintf(rightPin, "| %d | %4s | %-8s | %3d | %3d |", 
+                                    value,
+                                    mode,
+                                    pinInfoTable[i].name, 
+                                    pinInfoTable[i].wPi, 
+                                    pinInfoTable[i].bcm);
+                            break;
+                        }
+                    }
+                    
+                    // Print the line with both pins
+                    mvprintw(y++, 1, "%s %2d || %2d %s", leftPin, physical, physical + 1, rightPin);
+                }
+            }
+            
+            pclose(gpio_cmd);
+        }
+        
+        // If gpiod didn't work, fall back to sysfs
+        if (!used_gpiod) {
+            // Loop through pins by physical order
+            for (int physical = 3; physical <= 40; physical += 2) {
+                char leftPin[100] = "|     |     |      0v |      |   |";
+                char rightPin[100] = "|   |      | 0v      |     |     |";
+                
+                // Find info for left pin (odd numbers)
+                for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+                    if (pinInfoTable[i].physical == physical) {
+                        // Check if the GPIO exists in sysfs
+                        char path[128];
+                        snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", pinInfoTable[i].bcm);
+                        
+                        char mode[5] = "---";
+                        int value = -1;
+                        
+                        // Try to read direction
+                        char dir_path[128];
+                        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", pinInfoTable[i].bcm);
+                        FILE *dir_file = fopen(dir_path, "r");
+                        if (dir_file) {
+                            char dir[10] = {0};
+                            if (fgets(dir, sizeof(dir), dir_file)) {
+                                if (strstr(dir, "in")) {
+                                    strcpy(mode, "IN");
+                                } else if (strstr(dir, "out")) {
+                                    strcpy(mode, "OUT");
+                                }
+                            }
+                            fclose(dir_file);
+                        }
+                        
+                        // Try to read value
+                        FILE *val_file = fopen(path, "r");
+                        if (val_file) {
+                            char val[2] = {0};
+                            if (fgets(val, sizeof(val), val_file)) {
+                                value = atoi(val);
+                            }
+                            fclose(val_file);
+                        }
+                        
+                        sprintf(leftPin, "| %3d | %3d | %7s | %4s | %d |", 
+                                pinInfoTable[i].bcm, 
+                                pinInfoTable[i].wPi, 
+                                pinInfoTable[i].name, 
+                                mode,
+                                value);
+                        break;
+                    }
+                }
+                
+                // Find info for right pin (even numbers)
+                for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+                    if (pinInfoTable[i].physical == physical + 1) {
+                        // Check if the GPIO exists in sysfs
+                        char path[128];
+                        snprintf(path, sizeof(path), "/sys/class/gpio/gpio%d/value", pinInfoTable[i].bcm);
+                        
+                        char mode[5] = "---";
+                        int value = -1;
+                        
+                        // Try to read direction
+                        char dir_path[128];
+                        snprintf(dir_path, sizeof(dir_path), "/sys/class/gpio/gpio%d/direction", pinInfoTable[i].bcm);
+                        FILE *dir_file = fopen(dir_path, "r");
+                        if (dir_file) {
+                            char dir[10] = {0};
+                            if (fgets(dir, sizeof(dir), dir_file)) {
+                                if (strstr(dir, "in")) {
+                                    strcpy(mode, "IN");
+                                } else if (strstr(dir, "out")) {
+                                    strcpy(mode, "OUT");
+                                }
+                            }
+                            fclose(dir_file);
+                        }
+                        
+                        // Try to read value
+                        FILE *val_file = fopen(path, "r");
+                        if (val_file) {
+                            char val[2] = {0};
+                            if (fgets(val, sizeof(val), val_file)) {
+                                value = atoi(val);
+                            }
+                            fclose(val_file);
+                        }
+                        
+                        sprintf(rightPin, "| %d | %4s | %-8s | %3d | %3d |", 
+                                value,
+                                mode,
+                                pinInfoTable[i].name, 
+                                pinInfoTable[i].wPi, 
+                                pinInfoTable[i].bcm);
+                        break;
+                    }
+                }
+                
+                // Print the line with both pins
+                mvprintw(y++, 1, "%s %2d || %2d %s", leftPin, physical, physical + 1, rightPin);
             }
         }
         
-        // Find info for right pin (even numbers)
-        for (int i = 0; pinInfoTable[i].name != NULL; i++) {
-            if (pinInfoTable[i].physical == physical + 1) {
-                int mode = gpioGetMode(pinInfoTable[i].bcm);
-                int value = gpioRead(pinInfoTable[i].bcm);
-                sprintf(rightPin, "| %d | %4s | %-8s | %3d | %3d |", 
-                        value,
-                        mode == PI_INPUT ? "IN" : (mode == PI_OUTPUT ? "OUT" : "ALT"),
-                        pinInfoTable[i].name, 
-                        pinInfoTable[i].wPi, 
-                        pinInfoTable[i].bcm);
-                break;
+        // Print table footer
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
+        mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi %s--+---+------+---------+-----+-----+", 
+                 model_5 ? "5" : "3B");
+        
+        mvprintw(y++, 1, "NOTE: Using direct GPIO access for Raspberry Pi 5 (pigpio not compatible)");
+        if (!used_gpiod) {
+            mvprintw(y++, 1, "Some GPIO pins may not show correct status without sudo access");
+        }
+    } else {
+        // Using pigpio successfully - display GPIO status in a formatted table
+        y = 5;  // Reset y here to leave space for the model info
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi %s--+---+------+---------+-----+-----+", 
+                model_5 ? "5" : "3B");
+        mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
+        
+        // Print 3.3V, 5V, and GND (0V) pins
+        mvprintw(y++, 1, "|     |     |    3.3v |      |   |  1 || 2  |   |      | 5v      |     |     |");
+        
+        // Loop through pins by physical order
+        for (int physical = 3; physical <= 40; physical += 2) {
+            char leftPin[100] = "|     |     |      0v |      |   |";
+            char rightPin[100] = "|   |      | 0v      |     |     |";
+            
+            // Find info for left pin (odd numbers)
+            for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+                if (pinInfoTable[i].physical == physical) {
+                    int mode = gpioGetMode(pinInfoTable[i].bcm);
+                    int value = gpioRead(pinInfoTable[i].bcm);
+                    sprintf(leftPin, "| %3d | %3d | %7s | %4s | %d |", 
+                            pinInfoTable[i].bcm, 
+                            pinInfoTable[i].wPi, 
+                            pinInfoTable[i].name, 
+                            mode == PI_INPUT ? "IN" : (mode == PI_OUTPUT ? "OUT" : "ALT"),
+                            value);
+                    break;
+                }
             }
+            
+            // Find info for right pin (even numbers)
+            for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+                if (pinInfoTable[i].physical == physical + 1) {
+                    int mode = gpioGetMode(pinInfoTable[i].bcm);
+                    int value = gpioRead(pinInfoTable[i].bcm);
+                    sprintf(rightPin, "| %d | %4s | %-8s | %3d | %3d |", 
+                            value,
+                            mode == PI_INPUT ? "IN" : (mode == PI_OUTPUT ? "OUT" : "ALT"),
+                            pinInfoTable[i].name, 
+                            pinInfoTable[i].wPi, 
+                            pinInfoTable[i].bcm);
+                    break;
+                }
+            }
+            
+            // Print the line with both pins
+            mvprintw(y++, 1, "%s %2d || %2d %s", leftPin, physical, physical + 1, rightPin);
         }
         
-        // Print the line with both pins
-        mvprintw(y++, 1, "%s %2d || %2d %s", leftPin, physical, physical + 1, rightPin);
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
+        mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
+        mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi %s--+---+------+---------+-----+-----+", 
+                 model_5 ? "5" : "3B");
+        
+        // Cleanup 
+        gpioTerminate();
     }
-    
-    mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
-    mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
-    mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi 3B--+---+------+---------+-----+-----+");
-    
-    // Cleanup 
-    gpioTerminate();
 #else
-    // pigpio library not available
-    mvprintw(y++, 1, "GPIO library (pigpio) is not installed on this system.");
-    mvprintw(y++, 1, "Please install the libpigpio-dev package to use GPIO functionality:");
-    mvprintw(y++, 1, "    sudo apt-get update");
-    mvprintw(y++, 1, "    sudo apt-get install libpigpio-dev");
-    mvprintw(y++, 1, "Then recompile the application with: make clean && make");
+    // pigpio library not available or not compiled in
+    mvprintw(y++, 1, "GPIO library (pigpio) is not enabled in this build.");
+    
+    // Try to use gpioinfo as a fallback
+    FILE *gpio_cmd = popen("which gpioinfo >/dev/null 2>&1 && gpioinfo gpiochip0", "r");
+    if (gpio_cmd) {
+        mvprintw(y++, 1, "Using Linux libgpiod utilities as fallback:");
+        y++;
+        
+        char line[1024];
+        while (fgets(line, sizeof(line), gpio_cmd)) {
+            mvprintw(y++, 1, "%s", line);
+            // Limit to prevent overflow
+            if (y > screen_height - 5) break;
+        }
+        pclose(gpio_cmd);
+    } else {
+        mvprintw(y++, 1, "Please install GPIO libraries for full support:");
+        mvprintw(y++, 1, "    sudo apt-get update");
+        mvprintw(y++, 1, "    sudo apt-get install libpigpio-dev libgpiod-dev gpiod");
+        mvprintw(y++, 1, "Then recompile the application with: make clean && make");
+    }
+    
+    // For Pi 5, add additional information
+    if (model_5) {
+        mvprintw(y++, 1, "");
+        mvprintw(y++, 1, "Note: Raspberry Pi 5 requires updated GPIO libraries.");
+        mvprintw(y++, 1, "The current version of pigpio might not recognize Pi 5 hardware.");
+        mvprintw(y++, 1, "Consider using gpiod library which has better Pi 5 support.");
+    }
     
     log_error(error_console, ERROR_WARNING, "MINUX", 
-              "GPIO functionality requires the pigpio library to be installed.");
+              "GPIO functionality requires GPIO libraries to be installed and enabled.");
 #endif
     
     mvprintw(y + 2, 1, "Press any key to continue...");
