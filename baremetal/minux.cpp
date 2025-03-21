@@ -28,7 +28,9 @@
     #endif
 
     #if __has_include(<pigpio.h>)
-    #include <pigpio.h>
+    extern "C" {
+        #include <pigpio.h>
+    }
     #endif
 #endif
 
@@ -390,15 +392,7 @@ void cmd_gpio(void) {
     // Define y here, outside the conditional blocks
     int y = 1;
     
-#if defined(__has_include)
-#if __has_include(<pigpio.h>)
-    // Include here instead of at the top to avoid compilation errors
-    // when the library is not available
-    // Proper C++ inclusion of C library
-    extern "C" {
-        #include <pigpio.h>
-    }
-    
+#if defined(__has_include) && __has_include(<pigpio.h>)
     // Initialize pigpio if needed
     if (gpioInitialise() < 0) {
         mvprintw(1, 1, "Failed to initialize GPIO interface");
