@@ -21,17 +21,30 @@
 #include <string>
 #include <cstring>
 
-// Conditionally include libcamera and pigpio only if available
+// First check if we're on ARM architecture (like Raspberry Pi)
 #ifdef __arm__
+    // Then check for libcamera
     #if __has_include(<libcamera/libcamera.h>)
-    #include <libcamera/libcamera.h>
+        #include <libcamera/libcamera.h>
     #endif
 
+    // Check for pigpio and include it properly with C linkage
     #if __has_include(<pigpio.h>)
-    extern "C" {
-        #include <pigpio.h>
-    }
+        extern "C" {
+            #include <pigpio.h>
+        }
     #endif
+#endif
+
+// Define GPIO constants in case they're not provided by pigpio
+#ifndef PI_INPUT
+    #define PI_INPUT 0
+#endif
+#ifndef PI_OUTPUT
+    #define PI_OUTPUT 1
+#endif
+#ifndef PI_ALT0
+    #define PI_ALT0 4
 #endif
 
 #define VERSION "0.0.1"
@@ -415,6 +428,7 @@ void cmd_gpio(void) {
         return;
     }
     
+#if defined(__arm__) && defined(__has_include) && __has_include(<pigpio.h>)
     // Try to initialize pigpio
     int pi_init = gpioInitialise();
     if (pi_init < 0) {
@@ -484,6 +498,13 @@ void cmd_gpio(void) {
     
     // Cleanup 
     gpioTerminate();
+#else
+    // pigpio library not available
+    mvprintw(y++, 1, "GPIO library (pigpio) is not available on this system.");
+    mvprintw(y++, 1, "Please compile with pigpio support to use GPIO functionality.");
+    log_error(error_console, ERROR_WARNING, "MINUX", 
+              "GPIO functionality requires pigpio library.");
+#endif
     
     mvprintw(y + 2, 1, "Press any key to continue...");
     refresh();
