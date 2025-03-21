@@ -392,13 +392,41 @@ void cmd_gpio(void) {
     // Define y here, outside the conditional blocks
     int y = 1;
     
-#if defined(__arm__) && defined(__has_include) && __has_include(<pigpio.h>)
-    // Initialize pigpio if needed
-    if (gpioInitialise() < 0) {
-        mvprintw(1, 1, "Failed to initialize GPIO interface");
+    // Check if we're on a Raspberry Pi by checking for the model file
+    bool is_raspberry_pi = false;
+    FILE *model_file = fopen("/sys/firmware/devicetree/base/model", "r");
+    if (model_file) {
+        char model[256];
+        if (fgets(model, sizeof(model), model_file)) {
+            if (strstr(model, "Raspberry Pi") != NULL) {
+                is_raspberry_pi = true;
+            }
+        }
+        fclose(model_file);
+    }
+    
+    if (!is_raspberry_pi) {
+        mvprintw(y++, 1, "GPIO support only available on Raspberry Pi");
+        log_error(error_console, ERROR_INFO, "MINUX", 
+                  "GPIO support only available on Raspberry Pi");
+        mvprintw(y + 2, 1, "Press any key to continue...");
+        refresh();
+        getch();
+        return;
+    }
+    
+    // Try to initialize pigpio
+    int pi_init = gpioInitialise();
+    if (pi_init < 0) {
+        mvprintw(y++, 1, "Failed to initialize GPIO interface. Error code: %d", pi_init);
+        mvprintw(y++, 1, "Make sure pigpio daemon is running with: sudo pigpiod");
+        mvprintw(y++, 1, "Or run MINUX with sudo privileges");
         refresh();
         log_error(error_console, ERROR_WARNING, "MINUX", 
-                  "Failed to initialize GPIO interface");
+                  "Failed to initialize GPIO interface. Try running: sudo pigpiod");
+        mvprintw(y + 2, 1, "Press any key to continue...");
+        refresh();
+        getch();
         return;
     }
     
@@ -456,13 +484,7 @@ void cmd_gpio(void) {
     
     // Cleanup 
     gpioTerminate();
-#else
-    // If pigpio is not available
-    mvprintw(y++, 1, "GPIO support only available on Raspberry Pi");
-    log_error(error_console, ERROR_INFO, "MINUX", 
-              "GPIO support only available on Raspberry Pi");
-#endif
-
+    
     mvprintw(y + 2, 1, "Press any key to continue...");
     refresh();
     getch();
@@ -924,9 +946,62 @@ int main(void) {
     init_windows();
     getcwd(current_path, sizeof(current_path));
 
-    // Show welcome message
-    printw("MINUX %s\n", VERSION);
-    printw("Type 'help' for available commands\n\n");
+    // Show welcome message with version
+    clear();
+    int y = 1;
+    mvprintw(y++, 1, "MINUX %s", VERSION);
+    
+    // Display platform information in ncurses
+    bool is_raspberry_pi = false;
+    FILE *model_file = fopen("/sys/firmware/devicetree/base/model", "r");
+    if (model_file) {
+        char model[256] = {0};
+        if (fgets(model, sizeof(model), model_file)) {
+            // Remove trailing newline if present
+            size_t len = strlen(model);
+            if (len > 0 && model[len-1] == '\n') {
+                model[len-1] = '\0';
+            }
+            mvprintw(y++, 1, "Platform: %s", model);
+            if (strstr(model, "Raspberry Pi") != NULL) {
+                is_raspberry_pi = true;
+            }
+        }
+        fclose(model_file);
+    } else {
+        // Try to get system information in other ways
+        FILE *uname_cmd = popen("uname -sr", "r");
+        if (uname_cmd) {
+            char uname_output[256] = {0};
+            if (fgets(uname_output, sizeof(uname_output), uname_cmd)) {
+                // Remove trailing newline if present
+                size_t len = strlen(uname_output);
+                if (len > 0 && uname_output[len-1] == '\n') {
+                    uname_output[len-1] = '\0';
+                }
+                mvprintw(y++, 1, "Platform: %s", uname_output);
+            }
+            pclose(uname_cmd);
+        } else {
+            mvprintw(y++, 1, "Platform: Unknown");
+        }
+    }
+    
+    // Display GPIO support status
+    if (is_raspberry_pi) {
+        mvprintw(y++, 1, "GPIO Support: Available (run 'gpio' command to view)");
+    } else {
+        mvprintw(y++, 1, "GPIO Support: Not available (requires Raspberry Pi)");
+    }
+    
+    // Empty line and help message
+    y++;
+    mvprintw(y++, 1, "Type 'help' for available commands");
+    
+    // Add another empty line before prompt
+    y++;
+    move(y, 0);
+    refresh();
 
     char cmd[MAX_CMD_LENGTH];
     int cmd_pos = 0;
