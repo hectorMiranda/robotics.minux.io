@@ -392,7 +392,7 @@ void cmd_gpio(void) {
     // Define y here, outside the conditional blocks
     int y = 1;
     
-#if defined(__has_include) && __has_include(<pigpio.h>)
+#if defined(__arm__) && defined(__has_include) && __has_include(<pigpio.h>)
     // Initialize pigpio if needed
     if (gpioInitialise() < 0) {
         mvprintw(1, 1, "Failed to initialize GPIO interface");
@@ -461,12 +461,6 @@ void cmd_gpio(void) {
     mvprintw(y++, 1, "GPIO support only available on Raspberry Pi");
     log_error(error_console, ERROR_INFO, "MINUX", 
               "GPIO support only available on Raspberry Pi");
-#endif
-#else
-    // If __has_include is not supported
-    mvprintw(y++, 1, "GPIO support not available (compiler does not support feature detection)");
-    log_error(error_console, ERROR_INFO, "MINUX", 
-              "GPIO support not available (compiler does not support feature detection)");
 #endif
 
     mvprintw(y + 2, 1, "Press any key to continue...");
