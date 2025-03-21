@@ -394,7 +394,10 @@ void cmd_gpio(void) {
 #if __has_include(<pigpio.h>)
     // Include here instead of at the top to avoid compilation errors
     // when the library is not available
-    #include <pigpio.h>
+    // Proper C++ inclusion of C library
+    extern "C" {
+        #include <pigpio.h>
+    }
     
     // Initialize pigpio if needed
     if (gpioInitialise() < 0) {
