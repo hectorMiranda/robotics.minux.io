@@ -15,6 +15,11 @@
 #include <signal.h>  // For signal handling
 #include "error_console.h"
 #include <locale.h>
+#include <stddef.h>
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <cstring>
 
 // Conditionally include libcamera and pigpio only if available
 #ifdef __arm__
@@ -92,7 +97,7 @@ Command commands[] = {
 
 // Global variables
 char current_path[MAX_PATH];
-ErrorConsole *error_console;
+ErrorConsole *error_console = NULL;
 WINDOW *status_bar;
 int screen_width, screen_height;
 SerialPort serial_port = {
@@ -113,6 +118,139 @@ void show_prompt(void);
 static int levenshtein_distance(const char *s1, const char *s2);
 static inline int min(int a, int b) {
     return (a < b) ? a : b;
+}
+
+// Define the GPIO pin information structure
+typedef struct {
+    int bcm;       // BCM pin number
+    int wPi;       // WiringPi pin number
+    const char *name;    // Pin name
+    int physical; // Physical pin number
+} PinInfo;
+
+// GPIO pin information for Raspberry Pi 3B
+PinInfo pinInfoTable[] = {
+    {2, 8, "SDA.1", 3},
+    {3, 9, "SCL.1", 5},
+    {4, 7, "GPIO. 7", 7},
+    {14, 15, "TxD", 8},
+    {15, 16, "RxD", 10},
+    {17, 0, "GPIO. 0", 11},
+    {18, 1, "GPIO. 1", 12},
+    {27, 2, "GPIO. 2", 13},
+    {22, 3, "GPIO. 3", 15},
+    {23, 4, "GPIO. 4", 16},
+    {24, 5, "GPIO. 5", 18},
+    {10, 12, "MOSI", 19},
+    {9, 13, "MISO", 21},
+    {25, 6, "GPIO. 6", 22},
+    {11, 14, "SCLK", 23},
+    {8, 10, "CE0", 24},
+    {7, 11, "CE1", 26},
+    {0, 30, "SDA.0", 27},
+    {1, 31, "SCL.0", 28},
+    {5, 21, "GPIO.21", 29},
+    {6, 22, "GPIO.22", 31},
+    {12, 26, "GPIO.26", 32},
+    {13, 23, "GPIO.23", 33},
+    {19, 24, "GPIO.24", 35},
+    {16, 27, "GPIO.27", 36},
+    {26, 25, "GPIO.25", 37},
+    {20, 28, "GPIO.28", 38},
+    {21, 29, "GPIO.29", 40},
+    {-1, -1, NULL, -1}  // End marker
+};
+
+void display_welcome_banner() {
+    std::cout << "\n";
+    std::cout << "███╗   ███╗██╗███╗   ██╗██╗   ██╗██╗  ██╗\n";
+    std::cout << "████╗ ████║██║████╗  ██║██║   ██║╚██╗██╔╝\n";
+    std::cout << "██╔████╔██║██║██╔██╗ ██║██║   ██║ ╚███╔╝ \n";
+    std::cout << "██║╚██╔╝██║██║██║╚██╗██║██║   ██║ ██╔██╗ \n";
+    std::cout << "██║ ╚═╝ ██║██║██║ ╚████║╚██████╔╝██╔╝ ██╗\n";
+    std::cout << "╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝\n";
+    std::cout << "  Minimalist Unix-like Shell for Embedded Systems\n";
+    std::cout << "  Version 1.0.0\n\n";
+
+    // Display system information
+    std::cout << "=== System Information ===\n";
+
+    // OS information
+    std::ifstream os_release("/etc/os-release");
+    if (os_release.is_open()) {
+        std::string line;
+        while (std::getline(os_release, line)) {
+            if (line.substr(0, 12) == "PRETTY_NAME=") {
+                // Remove quotes if present
+                std::string name = line.substr(12);
+                if (name[0] == '"') {
+                    name = name.substr(1, name.find_last_of('"') - 1);
+                }
+                std::cout << "OS: " << name << std::endl;
+                break;
+            }
+        }
+        os_release.close();
+    } else {
+        // Try uname if os-release doesn't exist
+        FILE *uname_cmd = popen("uname -a", "r");
+        if (uname_cmd) {
+            char uname_output[256];
+            if (fgets(uname_output, sizeof(uname_output), uname_cmd)) {
+                std::cout << "System: " << uname_output;
+            }
+            pclose(uname_cmd);
+        }
+    }
+
+    // CPU information
+    std::ifstream cpuinfo("/proc/cpuinfo");
+    if (cpuinfo.is_open()) {
+        std::string line;
+        bool found_model = false;
+        while (std::getline(cpuinfo, line) && !found_model) {
+            if (line.substr(0, 10) == "model name" || 
+                line.substr(0, 8) == "Hardware" || 
+                line.substr(0, 5) == "Model") {
+                size_t colon_pos = line.find(':');
+                if (colon_pos != std::string::npos) {
+                    std::cout << "CPU:" << line.substr(colon_pos + 1) << std::endl;
+                    found_model = true;
+                }
+            }
+        }
+        cpuinfo.close();
+    }
+
+    // Memory information
+    std::ifstream meminfo("/proc/meminfo");
+    if (meminfo.is_open()) {
+        std::string line;
+        while (std::getline(meminfo, line)) {
+            if (line.substr(0, 9) == "MemTotal:") {
+                std::cout << "Memory: " << line.substr(9) << std::endl;
+                break;
+            }
+        }
+        meminfo.close();
+    }
+
+    // Check if running on Raspberry Pi
+    std::ifstream model("/sys/firmware/devicetree/base/model");
+    if (model.is_open()) {
+        std::string model_str;
+        std::getline(model, model_str);
+        if (model_str.find("Raspberry Pi") != std::string::npos) {
+            std::cout << "Platform: Raspberry Pi detected\n";
+            std::cout << "GPIO Support: Available\n";
+        }
+        model.close();
+    } else {
+        std::cout << "Platform: Not running on Raspberry Pi\n";
+        std::cout << "GPIO Support: Not available\n";
+    }
+
+    std::cout << std::endl;
 }
 
 // Command implementations
@@ -248,39 +386,95 @@ void cmd_clear(void) {
 
 void cmd_gpio(void) {
     clear();
-    #ifdef __arm__
-    // Raspberry Pi specific GPIO handling
-    FILE *fp = fopen("/sys/class/gpio/export", "w");
-    if (fp == NULL) {
+    
+    // Define y here, outside the conditional blocks
+    int y = 1;
+    
+#if defined(__has_include)
+#if __has_include(<pigpio.h>)
+    // Include here instead of at the top to avoid compilation errors
+    // when the library is not available
+    #include <pigpio.h>
+    
+    // Initialize pigpio if needed
+    if (gpioInitialise() < 0) {
+        mvprintw(1, 1, "Failed to initialize GPIO interface");
+        refresh();
         log_error(error_console, ERROR_WARNING, "MINUX", 
-                  "GPIO interface not available (are you running on Raspberry Pi?)");
+                  "Failed to initialize GPIO interface");
         return;
     }
-    fclose(fp);
     
-    // Display GPIO status in a formatted way
-    mvprintw(1, 1, "GPIO Status:");
-    mvprintw(3, 2, "GPIO Directory: /sys/class/gpio/");
+    // Display GPIO status in a formatted table
+    y = 1;  // Reset y here
+    mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi 3B--+---+------+---------+-----+-----+");
+    mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
+    mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
     
-    // Try to read GPIO exports
-    DIR *dir = opendir("/sys/class/gpio");
-    if (dir) {
-        struct dirent *entry;
-        int y = 5;
-        while ((entry = readdir(dir)) != NULL) {
-            if (strncmp(entry->d_name, "gpio", 4) == 0) {
-                mvprintw(y++, 2, "- %s", entry->d_name);
+    // Print 3.3V, 5V, and GND (0V) pins
+    mvprintw(y++, 1, "|     |     |    3.3v |      |   |  1 || 2  |   |      | 5v      |     |     |");
+    
+    // Loop through pins by physical order
+    for (int physical = 3; physical <= 40; physical += 2) {
+        char leftPin[100] = "|     |     |      0v |      |   |";
+        char rightPin[100] = "|   |      | 0v      |     |     |";
+        
+        // Find info for left pin (odd numbers)
+        for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+            if (pinInfoTable[i].physical == physical) {
+                int mode = gpioGetMode(pinInfoTable[i].bcm);
+                int value = gpioRead(pinInfoTable[i].bcm);
+                sprintf(leftPin, "| %3d | %3d | %7s | %4s | %d |", 
+                        pinInfoTable[i].bcm, 
+                        pinInfoTable[i].wPi, 
+                        pinInfoTable[i].name, 
+                        mode == PI_INPUT ? "IN" : (mode == PI_OUTPUT ? "OUT" : "ALT"),
+                        value);
+                break;
             }
         }
-        closedir(dir);
+        
+        // Find info for right pin (even numbers)
+        for (int i = 0; pinInfoTable[i].name != NULL; i++) {
+            if (pinInfoTable[i].physical == physical + 1) {
+                int mode = gpioGetMode(pinInfoTable[i].bcm);
+                int value = gpioRead(pinInfoTable[i].bcm);
+                sprintf(rightPin, "| %d | %4s | %-8s | %3d | %3d |", 
+                        value,
+                        mode == PI_INPUT ? "IN" : (mode == PI_OUTPUT ? "OUT" : "ALT"),
+                        pinInfoTable[i].name, 
+                        pinInfoTable[i].wPi, 
+                        pinInfoTable[i].bcm);
+                break;
+            }
+        }
+        
+        // Print the line with both pins
+        mvprintw(y++, 1, "%s %2d || %2d %s", leftPin, physical, physical + 1, rightPin);
     }
-    refresh();
-    #else
-    mvprintw(1, 1, "GPIO support only available on Raspberry Pi");
-    refresh();
+    
+    mvprintw(y++, 1, "+-----+-----+---------+------+---+----++----+---+------+---------+-----+-----+");
+    mvprintw(y++, 1, "| BCM | wPi |   Name  | Mode | V | Physical | V | Mode | Name    | wPi | BCM |");
+    mvprintw(y++, 1, "+-----+-----+---------+------+---+---Pi 3B--+---+------+---------+-----+-----+");
+    
+    // Cleanup 
+    gpioTerminate();
+#else
+    // If pigpio is not available
+    mvprintw(y++, 1, "GPIO support only available on Raspberry Pi");
     log_error(error_console, ERROR_INFO, "MINUX", 
               "GPIO support only available on Raspberry Pi");
-    #endif
+#endif
+#else
+    // If __has_include is not supported
+    mvprintw(y++, 1, "GPIO support not available (compiler does not support feature detection)");
+    log_error(error_console, ERROR_INFO, "MINUX", 
+              "GPIO support not available (compiler does not support feature detection)");
+#endif
+
+    mvprintw(y + 2, 1, "Press any key to continue...");
+    refresh();
+    getch();
 }
 
 void init_windows(void) {

@@ -2,23 +2,22 @@
 #define ERROR_CONSOLE_H
 
 #include <ncurses.h>
-#include <time.h>
+#include <panel.h>
 
-// Constants
-#define MAX_ERROR_MESSAGES 100
+// Error console settings
+#define ERROR_LOG_DIR "/var/log/minux"
+#define ERROR_LOG_FILE "/var/log/minux/error.log"
 #define MAX_ERROR_LENGTH 256
-#define MAX_PATH_LENGTH 4096
-#define MAX_ERROR_HISTORY 100
+#define MAX_ERROR_SOURCE 32
+#define MAX_ERROR_TIMESTAMP 32
 
-// Box drawing characters
-#define CONSOLE_TOP_LEFT "┌"
-#define CONSOLE_TOP_RIGHT "┐"
-#define CONSOLE_BOTTOM_LEFT "└"
-#define CONSOLE_BOTTOM_RIGHT "┘"
-#define CONSOLE_HORIZONTAL "─"
-#define CONSOLE_VERTICAL "│"
+// Color pairs for error levels
+#define COLOR_PAIR_ERROR 1
+#define COLOR_PAIR_WARNING 2
+#define COLOR_PAIR_INFO 3
+#define COLOR_PAIR_DEBUG 4
 
-// Color pairs
+// Modern console color definitions
 #define ERROR_COLOR_BORDER 1
 #define ERROR_COLOR_SUCCESS 2
 #define ERROR_COLOR_INFO 3
@@ -26,48 +25,71 @@
 #define ERROR_COLOR_CRITICAL 5
 #define ERROR_COLOR_TITLE 6
 
+// Unicode box drawing characters
+#define CONSOLE_TOP_LEFT "┌"
+#define CONSOLE_TOP_RIGHT "┐"
+#define CONSOLE_BOTTOM_LEFT "└"
+#define CONSOLE_BOTTOM_RIGHT "┘"
+#define CONSOLE_HORIZONTAL "─"
+#define CONSOLE_VERTICAL "│"
+
 // Error levels
 typedef enum {
-    ERROR_CRITICAL = 0,
-    ERROR_WARNING = 1,
-    ERROR_INFO = 2,
-    ERROR_SUCCESS = 3
+    ERROR_SUCCESS = 0,
+    ERROR_INFO,
+    ERROR_WARNING,
+    ERROR_CRITICAL,
+    ERROR_ERROR,  // For backward compatibility
+    ERROR_DEBUG   // For backward compatibility
 } ErrorLevel;
-
-// Forward declaration of ErrorConsole
-typedef struct _ErrorConsole ErrorConsole;
 
 // Error message structure
 typedef struct ErrorMessage {
     ErrorLevel level;
-    char source[64];
+    char timestamp[MAX_ERROR_TIMESTAMP];
+    char source[MAX_ERROR_SOURCE];
     char message[MAX_ERROR_LENGTH];
-    char timestamp[32];
     struct ErrorMessage *next;
 } ErrorMessage;
 
 // Error console structure
-struct _ErrorConsole {
-    WINDOW *win;
-    int is_visible;
-    int message_count;
-    int scroll_position;
-    ErrorMessage *messages;
-    int critical_count;
-    int warning_count;
-    int info_count;
-    int success_count;
+typedef struct ErrorConsole {
+    WINDOW *window;
+    PANEL *panel;
+    ErrorMessage *messages;  // Newer format
+    ErrorMessage *first_message; // Legacy for backward compatibility
+    ErrorMessage *last_message;  // Legacy for backward compatibility
     char *log_path;
-};
+    int is_visible;
+    int scroll_offset;
+    int total_messages;
+    int window_height;
+    int window_width;
+    int visible;            // Legacy for backward compatibility
+    int message_count;      // Legacy for backward compatibility
+} ErrorConsole;
 
-// Function prototypes
-ErrorConsole* error_console_init();
+// Console functions - modern API
+ErrorConsole* error_console_init(void);
 void error_console_destroy(ErrorConsole *console);
 void error_console_toggle(ErrorConsole *console);
 void error_console_handle_input(ErrorConsole *console, int ch);
 void log_error(ErrorConsole *console, ErrorLevel level, const char *source, const char *format, ...);
 int get_error_count(ErrorConsole *console, ErrorLevel level);
 const char* get_last_error_message(ErrorConsole *console);
-void update_status_bar_error(ErrorConsole *console);
 
-#endif // ERROR_CONSOLE_H 
+// Legacy API for backward compatibility
+ErrorConsole *create_error_console(void);
+void destroy_error_console(ErrorConsole *console);
+void show_error_console(ErrorConsole *console);
+void hide_error_console(ErrorConsole *console);
+void toggle_error_console(ErrorConsole *console);
+void update_error_console(ErrorConsole *console);
+int handle_error_console_input(ErrorConsole *console, int ch);
+int count_error_messages(ErrorConsole *console);
+
+// Status bar update functions
+void update_status_bar_error(WINDOW *status_bar, ErrorConsole *console);
+void update_status_bar_error(ErrorConsole *console);  // Overloaded version
+
+#endif /* ERROR_CONSOLE_H */ 

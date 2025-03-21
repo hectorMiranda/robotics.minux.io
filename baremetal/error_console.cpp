@@ -9,6 +9,11 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <locale.h>
+#include <ncurses.h>
+#include <panel.h>
+#include <menu.h>
+#include <cstring>
+#include <cstdlib>
 
 // Helper function declarations
 static int min(int a, int b) {
@@ -346,4 +351,126 @@ const char* get_last_error_message(ErrorConsole *console) {
         current = current->next;
     }
     return current->message;
+}
+
+// For backward compatibility
+ErrorConsole *create_error_console(void) {
+    return error_console_init();
+}
+
+void destroy_error_console(ErrorConsole *console) {
+    error_console_destroy(console);
+}
+
+void update_error_console(ErrorConsole *console) {
+    if (!console || !console->is_visible) {
+        return;
+    }
+    refresh_console(console);
+}
+
+void show_error_console(ErrorConsole *console) {
+    if (!console || console->is_visible) {
+        return;
+    }
+    console->is_visible = 1;
+    refresh_console(console);
+}
+
+void hide_error_console(ErrorConsole *console) {
+    if (!console || !console->is_visible) {
+        return;
+    }
+    console->is_visible = 0;
+    werase(console->window);
+    wrefresh(console->window);
+    refresh();
+}
+
+void toggle_error_console(ErrorConsole *console) {
+    error_console_toggle(console);
+}
+
+int handle_error_console_input(ErrorConsole *console, int ch) {
+    if (!console || !console->is_visible) {
+        return 0;
+    }
+    error_console_handle_input(console, ch);
+    return 1;
+}
+
+int count_error_messages(ErrorConsole *console) {
+    return console->total_messages;
+}
+
+// Update the status bar with error information
+void update_status_bar_error(WINDOW *status_bar, ErrorConsole *console) {
+    if (!status_bar || !console) {
+        return;
+    }
+
+    int errors = 0;
+    int warnings = 0;
+    int infos = 0;
+    ErrorMessage *current = console->messages;
+    
+    while (current) {
+        switch (current->level) {
+            case ERROR_ERROR:
+                errors++;
+                break;
+            case ERROR_WARNING:
+                warnings++;
+                break;
+            case ERROR_INFO:
+                infos++;
+                break;
+            default:
+                break;
+        }
+        current = current->next;
+    }
+
+    // Display the error counts in the status bar
+    wattron(status_bar, A_BOLD);
+    mvwprintw(status_bar, 0, COLS - 40, "Errors: ");
+    if (errors > 0) {
+        wattron(status_bar, COLOR_PAIR(COLOR_PAIR_ERROR));
+    }
+    wprintw(status_bar, "%d ", errors);
+    if (errors > 0) {
+        wattroff(status_bar, COLOR_PAIR(COLOR_PAIR_ERROR));
+    }
+    
+    wprintw(status_bar, "Warnings: ");
+    if (warnings > 0) {
+        wattron(status_bar, COLOR_PAIR(COLOR_PAIR_WARNING));
+    }
+    wprintw(status_bar, "%d ", warnings);
+    if (warnings > 0) {
+        wattroff(status_bar, COLOR_PAIR(COLOR_PAIR_WARNING));
+    }
+    
+    wprintw(status_bar, "Info: ");
+    if (infos > 0) {
+        wattron(status_bar, COLOR_PAIR(COLOR_PAIR_INFO));
+    }
+    wprintw(status_bar, "%d", infos);
+    if (infos > 0) {
+        wattroff(status_bar, COLOR_PAIR(COLOR_PAIR_INFO));
+    }
+    wattroff(status_bar, A_BOLD);
+    
+    wrefresh(status_bar);
+}
+
+// Declaration with GCC weak attribute
+#ifdef __GNUC__
+__attribute__((weak))
+#endif
+void update_status_bar_error(ErrorConsole *console) {
+    // This is a stub implementation that will be replaced by the app-specific version
+    // when linked with either minux.o or explorer.o
+    // The weak attribute allows it to be overridden without causing multiple definition errors
+    (void)console;  // Prevent unused parameter warning
 }
