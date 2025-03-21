@@ -26,18 +26,15 @@
 #define PI_OUTPUT 1
 #define PI_ALT0 4
 
-// Try to include pigpio only if it's available
-#if defined(__has_include)
-  #if __has_include(<pigpio.h>)
-    #define HAS_PIGPIO 1
-    extern "C" {
-      #include <pigpio.h>
-    }
-  #else
+// Try to include pigpio only if the compiler flag indicates it's available
+#ifndef HAS_PIGPIO
     #define HAS_PIGPIO 0
-  #endif
-#else
-  #define HAS_PIGPIO 0
+#endif
+
+#if HAS_PIGPIO
+    extern "C" {
+        #include <pigpio.h>
+    }
 #endif
 
 // First check if we're on ARM architecture (like Raspberry Pi)
