@@ -36,9 +36,10 @@
 // Serial communication structure
 typedef struct {
     int fd;
-    struct termios old_tio;
+    char device[256];
     int baud_rate;
-    char port[256];
+    struct termios old_tio;
+    FILE* port;
     int is_connected;
 } SerialPort;
 
@@ -96,9 +97,11 @@ WINDOW *status_bar;
 int screen_width, screen_height;
 SerialPort serial_port = {
     .fd = -1,
+    .device = {0},
     .baud_rate = 115200,
-    .is_connected = 0,
-    .port = {0}
+    .old_tio = {},
+    .port = NULL,
+    .is_connected = 0
 };
 
 // Function declarations
@@ -658,7 +661,7 @@ static void handle_serial_input(SerialPort *sp) {
 
 static void handle_serial_output(SerialPort *sp) {
     char buffer[1024];
-    int n = read(stdin->_file, buffer, sizeof(buffer) - 1);
+    int n = read(fileno(stdin), buffer, sizeof(buffer) - 1);
     if (n > 0) {
         buffer[n] = '\0';
         write(sp->fd, buffer, n);
@@ -706,7 +709,7 @@ void serial_monitor(void) {
         return;
     }
 
-    strncpy(serial_port.port, port, sizeof(serial_port.port) - 1);
+    strncpy(serial_port.device, port, sizeof(serial_port.device) - 1);
     serial_port.is_connected = 1;
 
     // Set up signal handler for cleanup

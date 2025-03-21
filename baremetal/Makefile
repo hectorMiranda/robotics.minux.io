@@ -1,43 +1,34 @@
-CC = g++
-CFLAGS = -Wall -Wextra -g
+CC = gcc
+CXX = g++
+CFLAGS = -Wall -Wextra -g -I/usr/include/libcamera -I/usr/include/pigpio
+CXXFLAGS = -Wall -Wextra -g -I/usr/include/libcamera -I/usr/include/pigpio
+LDFLAGS = -lncurses -lmenu -lpanel -lpigpio -lpthread -lrt -lcamera
 
-# Add include paths only if they exist
-ifneq ($(wildcard /usr/include/libcamera),)
-    CFLAGS += -I/usr/include/libcamera
-endif
+# Object files
+OBJS = minux.o error_console.o
 
-ifneq ($(wildcard /usr/include/pigpio),)
-    CFLAGS += -I/usr/include/pigpio
-endif
+# Default target
+all: minux
 
-LDFLAGS = -lncurses -lmenu -lpanel
+# Compile C files
+%.o: %.c
+	$(CC) $(CFLAGS) -c $< -o $@
 
-# Detect if we're on Raspberry Pi
-ifeq ($(shell uname -m), armv7l)
-    LDFLAGS += -lpigpio
-endif
+# Compile C++ files
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-all: minux explorer
+# Link target
+minux: $(OBJS)
+	$(CXX) -o $@ $^ $(LDFLAGS)
 
-minux: minux.o error_console.o
-	$(CC) $(CFLAGS) -o minux minux.o error_console.o $(LDFLAGS)
+# Clean target
+clean:
+	rm -f $(OBJS) minux
 
-explorer: explorer.o
-	$(CC) $(CFLAGS) -o explorer explorer.o $(LDFLAGS)
-
-minux.o: minux.cpp error_console.h
-	$(CC) $(CFLAGS) -c minux.cpp
-
-explorer.o: explorer.cpp
-	$(CC) $(CFLAGS) -c explorer.cpp
-
-error_console.o: error_console.cpp error_console.h
-	$(CC) $(CFLAGS) -c error_console.cpp
-
+# Debug target
 debug: CFLAGS += -DDEBUG
+debug: CXXFLAGS += -DDEBUG
 debug: all
 
-clean:
-	rm -f *.o minux explorer
-
-.PHONY: all debug clean 
+.PHONY: all clean debug 
