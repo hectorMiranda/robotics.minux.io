@@ -139,7 +139,7 @@ static void draw_console_border(ErrorConsole *console) {
 
     // Draw title with fancy borders
     int title_pos = (width - 20) / 2;
-    mvwaddstr(console->window, 0, title_pos, "╡ MINUX ERROR LOG ╞");
+    mvwaddstr(console->window, 0, title_pos, "- MINUX ERROR LOG -");
 
     wattroff(console->window, COLOR_PAIR(ERROR_COLOR_BORDER) | A_BOLD);
 }
@@ -218,11 +218,19 @@ static void refresh_console(ErrorConsole *console) {
 void error_console_toggle(ErrorConsole *console) {
     console->is_visible = !console->is_visible;
     if (console->is_visible) {
+        // Save current screen content before displaying console
         refresh_console(console);
     } else {
+        // Just hide the window without erasing everything
         werase(console->window);
         wrefresh(console->window);
+        
+        // Force a refresh of the entire screen to restore underlying content
+        redrawwin(stdscr);
         refresh();
+        
+        // Ensure cursor is visible at the correct position
+        curs_set(1);
     }
 }
 

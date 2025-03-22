@@ -991,47 +991,47 @@ void show_prompt(void) {
 }
 
 void launch_explorer(void) {
-    // Show splash screen with proper Unicode box drawing
-    clear();
-    int y = screen_height / 2 - 4;
-    const char *banner[] = {
-        "┌────────────────────────────────────────┐",
-        "│           MINUX File Explorer          │",
-        "│                                        │",
-        "│              Version %s             │",
-        "│                                        │",
-        "│          Loading, please wait...       │",
-        "└────────────────────────────────────────┘"
+    // Check if explorer executable exists in various possible locations
+    const char* explorer_paths[] = {
+        "./explorer",                // Current directory
+        "../explorer",               // Parent directory
+        "/usr/local/bin/explorer",   // System location
+        NULL
     };
-
-    // Calculate center position
-    int banner_width = strlen(banner[0]);
-    int start_x = (screen_width - banner_width) / 2;
-
-    // Draw the banner
-    for (size_t i = 0; i < sizeof(banner) / sizeof(banner[0]); i++) {
-        if (i == 3) {
-            // Special handling for version string
-            mvprintw(y, start_x, banner[i], VERSION);
-        } else {
-            mvprintw(y, start_x, "%s", banner[i]);
+    
+    const char* explorer_path = NULL;
+    for (int i = 0; explorer_paths[i] != NULL; i++) {
+        if (access(explorer_paths[i], X_OK) == 0) {
+            explorer_path = explorer_paths[i];
+            break;
         }
-        y++;
     }
-    refresh();
-    napms(1500);  // Show splash for 1.5 seconds
-
-    // Launch explorer
-    endwin();  // Temporarily end ncurses mode
-    int result = system("./explorer");
-    if (result != 0) {
-        initscr();  // Restore ncurses mode
-        log_error(error_console, ERROR_CRITICAL, "MINUX", 
-                  "Failed to launch explorer (error code: %d)", result);
+    
+    // Launch explorer if found
+    if (explorer_path != NULL) {
+        endwin();  // Temporarily end ncurses mode
+        int result = system(explorer_path);
+        if (result != 0) {
+            initscr();  // Restore ncurses mode
+            log_error(error_console, ERROR_CRITICAL, "MINUX", 
+                      "Explorer process exited with error code: %d", result);
+        } else {
+            initscr();  // Restore ncurses mode
+            log_error(error_console, ERROR_SUCCESS, "MINUX", 
+                      "Explorer session ended successfully");
+        }
     } else {
-        initscr();  // Restore ncurses mode
-        log_error(error_console, ERROR_SUCCESS, "MINUX", 
-                  "Explorer session ended successfully");
+        // Explorer not found, show error
+        log_error(error_console, ERROR_CRITICAL, "MINUX", 
+                  "Explorer executable not found. Please ensure 'explorer' is built and in the path.");
+        
+        // Display error message on screen
+        clear();
+        mvprintw(screen_height/2 - 2, (screen_width - 40)/2, "Explorer executable not found!");
+        mvprintw(screen_height/2 - 1, (screen_width - 40)/2, "Please ensure 'explorer' is built.");
+        mvprintw(screen_height/2, (screen_width - 40)/2, "Press any key to continue...");
+        refresh();
+        getch();
     }
     refresh();
 }

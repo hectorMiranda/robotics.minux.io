@@ -25,13 +25,13 @@
 #define ERROR_COLOR_CRITICAL 5
 #define ERROR_COLOR_TITLE 6
 
-// Unicode box drawing characters
-#define CONSOLE_TOP_LEFT "┌"
-#define CONSOLE_TOP_RIGHT "┐"
-#define CONSOLE_BOTTOM_LEFT "└"
-#define CONSOLE_BOTTOM_RIGHT "┘"
-#define CONSOLE_HORIZONTAL "─"
-#define CONSOLE_VERTICAL "│"
+// Replace Unicode box drawing characters with ASCII equivalents
+#define CONSOLE_TOP_LEFT "+"
+#define CONSOLE_TOP_RIGHT "+"
+#define CONSOLE_BOTTOM_LEFT "+"
+#define CONSOLE_BOTTOM_RIGHT "+"
+#define CONSOLE_HORIZONTAL "-"
+#define CONSOLE_VERTICAL "|"
 
 // Error levels
 typedef enum {
@@ -39,7 +39,7 @@ typedef enum {
     ERROR_INFO,
     ERROR_WARNING,
     ERROR_CRITICAL,
-    ERROR_ERROR,  // For backward compatibility
+    ERROR_ERROR = ERROR_CRITICAL,  // alias for backward compatibility
     ERROR_DEBUG   // For backward compatibility
 } ErrorLevel;
 

@@ -25,6 +25,9 @@
 #define KEY_CTRL(x) ((x) & 0x1F)
 #define KEY_ALT(x) (0x200 + (x))
 
+// Forward declarations for ASCII box
+void draw_ascii_box(WINDOW *win);
+
 typedef struct {
     char name[MAX_NAME_LENGTH];
     char path[MAX_PATH];
@@ -73,6 +76,10 @@ typedef struct Menu {
     int is_active;
 } Menu;
 
+// Forward declarations after struct definitions
+void show_status_message(const char *message, int type);
+void load_directory(Panel *panel, const char *path);
+
 // Global state
 TabBar tab_bar;
 Panel file_panel;
@@ -86,10 +93,6 @@ clock_t status_message_time = 0;
 Menu menus[4];  // File, Edit, View, Help
 int active_menu = -1;
 char current_path[MAX_PATH];  // Move current_path to global scope
-
-// Forward declarations
-void show_status_message(const char *message, int type);
-void load_directory(Panel *panel, const char *path);
 
 int safe_path_join(char *dest, size_t dest_size, const char *path1, const char *path2) {
     // First try with snprintf to get the required length
@@ -144,8 +147,8 @@ void draw_status_bar(const char *path) {
     wattron(status_bar, COLOR_PAIR(6));
     mvwhline(status_bar, 0, 0, ' ', screen_width);
 
-    // Show current path on the left
-    mvwprintw(status_bar, 0, 1, " %s ", path);
+    // Show current path on the left with no unicode
+    mvwprintw(status_bar, 0, 1, " [DIR] %s ", path);  // Removed folder emoji, using [DIR] instead
 
     // Show cursor position on the right
     if (tab_bar.active >= 0) {
@@ -241,7 +244,7 @@ void open_file_in_tab(const char *path) {
 
 void draw_file_content(WINDOW *win, Tab *tab) {
     wclear(win);
-    box(win, 0, 0);
+    draw_ascii_box(win);  // Use ASCII box instead of box(win, 0, 0)
 
     if (!tab->content) {
         mvwprintw(win, 1, 1, "Empty file");
@@ -321,9 +324,35 @@ void handle_mouse() {
     }
 }
 
+void draw_ascii_box(WINDOW *win) {
+    int height, width;
+    getmaxyx(win, height, width);
+    
+    // Draw the corners
+    mvwaddch(win, 0, 0, '+');              // Top-left corner
+    mvwaddch(win, 0, width - 1, '+');      // Top-right corner
+    mvwaddch(win, height - 1, 0, '+');     // Bottom-left corner
+    mvwaddch(win, height - 1, width - 1, '+'); // Bottom-right corner
+    
+    // Draw the horizontal lines
+    for (int x = 1; x < width - 1; x++) {
+        mvwaddch(win, 0, x, '-');          // Top border
+        mvwaddch(win, height - 1, x, '-'); // Bottom border
+    }
+    
+    // Draw the vertical lines
+    for (int y = 1; y < height - 1; y++) {
+        mvwaddch(win, y, 0, '|');          // Left border
+        mvwaddch(win, y, width - 1, '|');  // Right border
+    }
+}
+
 void draw_panel(Panel *panel, int width, int height, int startx, int is_active) {
     (void)startx;  // Explicitly mark parameter as unused
-    box(panel->win, 0, 0);
+    
+    // Use our ASCII box instead of ncurses box()
+    draw_ascii_box(panel->win);
+    
     int max_display = height - 2;
     
     if (panel->selected >= panel->count) panel->selected = panel->count - 1;
@@ -401,7 +430,7 @@ void load_directory(Panel *panel, const char *path) {
 
 void preview_file(WINDOW *win, const char *path) {
     wclear(win);
-    box(win, 0, 0);
+    draw_ascii_box(win);  // Use ASCII box instead of box(win, 0, 0)
     
     FILE *file = fopen(path, "r");
     if (!file) {
@@ -423,34 +452,7 @@ void preview_file(WINDOW *win, const char *path) {
     wrefresh(win);
 }
 
-void show_splash_screen() {
-    clear();
-    int max_y, max_x;
-    getmaxyx(stdscr, max_y, max_x);
 
-    // Calculate center position
-    const char *title = "BMM";
-    const char *subtitle = "Bare Metal Minux " VERSION;
-    const char *press_key = "Press any key to start...";
-
-    int title_x = (max_x - strlen(title)) / 2;
-    int subtitle_x = (max_x - strlen(subtitle)) / 2;
-    int press_key_x = (max_x - strlen(press_key)) / 2;
-    int start_y = max_y / 2 - 2;
-
-    // Draw splash screen
-    attron(A_BOLD);
-    mvprintw(start_y, title_x, "%s", title);
-    attroff(A_BOLD);
-    
-    mvprintw(start_y + 1, subtitle_x, "%s", subtitle);
-    mvprintw(start_y + 3, press_key_x, "%s", press_key);
-    
-    refresh();
-    getch();  // Wait for any key
-    clear();
-    refresh();
-}
 
 void show_status_message(const char *message, int type) {
     strncpy(status_message, message, sizeof(status_message) - 1);
@@ -587,7 +589,10 @@ void draw_menu_dropdown(Menu *menu, int x, int y) {
     // Draw menu items
     werase(menu->win);  // Clear the window first
     wattron(menu->win, COLOR_PAIR(5));
-    box(menu->win, 0, 0);
+    
+    // Draw ASCII box instead of box(menu->win, 0, 0)
+    draw_ascii_box(menu->win);
+    
     for (int i = 0; i < menu->count; i++) {
         if (i == menu->selected)
             wattron(menu->win, A_REVERSE);
@@ -688,7 +693,6 @@ int main() {
     preview_win = newwin(main_height, screen_width / 2, 2, screen_width / 2);
 
     // Show splash screen
-    show_splash_screen();
 
     // Initialize tab bar
     tab_bar.count = 0;
