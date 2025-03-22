@@ -22,6 +22,9 @@
 #include <cstring>
 #include <pwd.h>    // For getpwuid
 #include <grp.h>    // For getgrgid
+#include <vector>
+#include <algorithm>
+#include <functional> // For tree command
 
 // Define GPIO constants for systems without pigpio
 #define PI_INPUT 0
@@ -85,6 +88,8 @@ void cmd_gpio(void);
 void launch_explorer(void);
 void capture_image(const char *filename);
 void test_camera(void);
+void cmd_tree(void);
+void cmd_tree_interactive(void); // Add separate function for interactive mode
 
 // Command structure
 typedef struct {
@@ -107,6 +112,7 @@ Command commands[] = {
     {"explorer", launch_explorer, "Launch file explorer"},
     {"test camera", test_camera, "Test the Arducam camera"},
     {"serial", serial_monitor, "Open serial monitor for device communication"},
+    {"tree", cmd_tree, "Display directory structure in a tree-like format"},
     {NULL, NULL, NULL}
 };
 
@@ -1149,6 +1155,178 @@ void handle_command(const char *cmd) {
         cmd_cd(argc > 1 ? args[1] : NULL);
         show_prompt();
     }
+    else if (strcmp(args[0], "tree") == 0) {
+        // Special handling for tree command with arguments
+        clear();
+        
+        // Default settings
+        const char *path = ".";  // Default to current directory
+        bool show_hidden = false;
+        int max_depth = -1;  // -1 means unlimited
+        bool interactive = false;
+        
+        // Parse any provided arguments
+        for (int i = 1; i < argc; i++) {
+            if (strcmp(args[i], "-i") == 0) {
+                interactive = true;
+                break;
+            } else if (strcmp(args[i], "-a") == 0 || strcmp(args[i], "--all") == 0) {
+                show_hidden = true;
+            } else if (strcmp(args[i], "-L") == 0 && i + 1 < argc) {
+                max_depth = atoi(args[i + 1]);
+                i++;  // Skip the next argument which is the depth number
+            } else if (args[i][0] != '-') {
+                path = args[i];
+            }
+        }
+        
+        if (interactive) {
+            cmd_tree_interactive();
+        } else {
+            // Open the directory
+            DIR *dir = opendir(path);
+            if (!dir) {
+                log_error(error_console, ERROR_WARNING, "MINUX", 
+                        "Error opening directory '%s': %s", path, strerror(errno));
+                show_prompt();
+                return;
+            }
+            
+            // Print header
+            char resolved_path[PATH_MAX];
+            if (realpath(path, resolved_path) == NULL) {
+                strncpy(resolved_path, path, PATH_MAX);
+            }
+            
+            // Display path
+            attron(COLOR_PAIR(1) | A_BOLD);
+            mvprintw(1, 1, "%s", resolved_path);
+            attroff(COLOR_PAIR(1) | A_BOLD);
+            
+            // Reset position for tree display
+            int y = 3;
+            
+            // Use recursive display for Unix-like functionality
+            int dir_count = 0;
+            int file_count = 0;
+            
+            // Display tree recursively using a dedicated function
+            std::function<void(const char*, int, const char*, bool)> display_tree_recursive = 
+                [&](const char* dir_path, int depth, const char* prefix, bool is_last) {
+                    if (max_depth > 0 && depth > max_depth) {
+                        return;
+                    }
+                    
+                    DIR *d = opendir(dir_path);
+                    if (!d) return;
+                    
+                    // Collect and sort entries
+                    std::vector<std::string> entries;
+                    std::vector<bool> is_dirs;
+                    struct dirent *entry;
+                    
+                    while ((entry = readdir(d)) != NULL) {
+                        // Skip . and .. entries
+                        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                            continue;
+                        }
+                        
+                        // Skip hidden files if not showing them
+                        if (!show_hidden && entry->d_name[0] == '.') {
+                            continue;
+                        }
+                        
+                        char full_path[MAX_PATH];
+                        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+                        
+                        struct stat st;
+                        if (stat(full_path, &st) != 0) continue;
+                        
+                        entries.push_back(entry->d_name);
+                        is_dirs.push_back(S_ISDIR(st.st_mode));
+                    }
+                    
+                    closedir(d);
+                    
+                    // Sort entries
+                    std::vector<size_t> indices(entries.size());
+                    for (size_t i = 0; i < indices.size(); i++) {
+                        indices[i] = i;
+                    }
+                    
+                    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+                        if (is_dirs[a] != is_dirs[b]) {
+                            return is_dirs[a] > is_dirs[b]; // Directories first
+                        }
+                        return entries[a] < entries[b]; // Then alphabetically
+                    });
+                    
+                    // Process entries
+                    for (size_t i = 0; i < indices.size(); i++) {
+                        if (y >= LINES - 5) {
+                            mvprintw(y++, 1, "... (more items not shown)");
+                            return;
+                        }
+                        
+                        size_t idx = indices[i];
+                        const std::string& name = entries[idx];
+                        bool is_directory = is_dirs[idx];
+                        bool is_entry_last = (i == indices.size() - 1);
+                        
+                        char full_path[MAX_PATH];
+                        snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name.c_str());
+                        
+                        struct stat st;
+                        if (stat(full_path, &st) != 0) continue;
+                        
+                        // Create new prefix for children
+                        std::string new_prefix = prefix;
+                        new_prefix += is_last ? "    " : "|   ";
+                        
+                        // Display current entry
+                        mvprintw(y, 1, "%s%s", prefix, is_entry_last ? "`-- " : "|-- ");
+                        
+                        if (is_directory) {
+                            attron(COLOR_PAIR(1) | A_BOLD);
+                            mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                            attroff(COLOR_PAIR(1) | A_BOLD);
+                            dir_count++;
+                            y++;
+                            
+                            // Recurse into directory
+                            display_tree_recursive(full_path, depth + 1, new_prefix.c_str(), is_entry_last);
+                        } else {
+                            if (st.st_mode & S_IXUSR) {
+                                attron(COLOR_PAIR(2) | A_BOLD);
+                                mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                                attroff(COLOR_PAIR(2) | A_BOLD);
+                            } else if (S_ISLNK(st.st_mode)) {
+                                attron(COLOR_PAIR(3) | A_BOLD);
+                                mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                                attroff(COLOR_PAIR(3) | A_BOLD);
+                            } else {
+                                mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                            }
+                            file_count++;
+                            y++;
+                        }
+                    }
+                };
+            
+            // Start recursive display
+            display_tree_recursive(path, 1, "", true);
+            
+            // Print summary
+            mvprintw(y + 1, 1, "\n%d directories, %d files", dir_count, file_count);
+            
+            // Instructions to continue
+            mvprintw(y + 3, 1, "Press any key to continue...");
+            refresh();
+            getch();
+            closedir(dir);
+        }
+        show_prompt();
+    }
     else {
         // Look for command in command table
         Command *best_match = NULL;
@@ -1371,6 +1549,421 @@ void serial_monitor(void) {
     }
 
     delwin(serial_win);
+}
+
+// Implement the tree command
+void cmd_tree(void) {
+    // Check if arguments include -i for interactive mode
+    char cmd_copy[MAX_CMD_LENGTH];
+    strcpy(cmd_copy, "tree");  // Default command name
+    
+    char args[MAX_CMD_LENGTH] = {0};
+    int pos = 0;
+    int ch;
+    int y = 1;
+    
+    // Get command line arguments (if any)
+    mvprintw(y, 1, "Arguments (optional): ");
+    refresh();
+    
+    while ((ch = getch()) != '\n' && pos < MAX_CMD_LENGTH - 1) {
+        if (ch >= 32 && ch <= 126) { // Printable characters
+            args[pos++] = ch;
+            printw("%c", ch);
+        } else if (ch == KEY_BACKSPACE || ch == 127) { // Backspace
+            if (pos > 0) {
+                pos--;
+                printw("\b \b"); // Erase character
+            }
+        }
+        refresh();
+    }
+    args[pos] = '\0';
+    
+    // Check if user wants interactive mode
+    if (strstr(args, "-i") != NULL) {
+        cmd_tree_interactive();
+        return;
+    }
+    
+    // Non-interactive mode with default or provided args
+    clear();
+    
+    // Parse any arguments
+    char *argv[MAX_ARGS];
+    int argc = 1; // Start with the command itself
+    argv[0] = cmd_copy;
+    
+    char *token = strtok(args, " ");
+    while (token != NULL && argc < MAX_ARGS) {
+        argv[argc++] = token;
+        token = strtok(NULL, " ");
+    }
+    
+    // Default settings
+    const char *path = ".";  // Default to current directory
+    bool show_hidden = false;
+    int max_depth = -1;  // -1 means unlimited
+    
+    // Parse any provided arguments
+    for (int i = 0; i < argc; i++) {
+        if (i < argc && (strcmp(argv[i], "-a") == 0 || strcmp(argv[i], "--all") == 0)) {
+            show_hidden = true;
+        } else if (i < argc-1 && strcmp(argv[i], "-L") == 0) {
+            max_depth = atoi(argv[i + 1]);
+            i++;  // Skip the next argument which is the depth number
+        } else if (i > 0 && argv[i][0] != '-') {
+            path = argv[i];
+        }
+    }
+    
+    // Open the directory
+    DIR *dir = opendir(path);
+    if (!dir) {
+        mvprintw(1, 1, "Error: Cannot open directory '%s': %s", path, strerror(errno));
+        refresh();
+        getch();
+        return;
+    }
+    
+    // Print header
+    char resolved_path[PATH_MAX];
+    if (realpath(path, resolved_path) == NULL) {
+        strncpy(resolved_path, path, PATH_MAX);
+    }
+    
+    // Display path
+    attron(COLOR_PAIR(1) | A_BOLD);
+    mvprintw(1, 1, "%s", resolved_path);
+    attroff(COLOR_PAIR(1) | A_BOLD);
+    
+    // Reset position for tree display
+    y = 3;
+    
+    // Use recursive display for Unix-like functionality
+    int dir_count = 0;
+    int file_count = 0;
+    
+    // Display the directory tree
+    mvprintw(y++, 1, ".");
+    
+    // Display tree recursively using a dedicated function
+    std::function<void(const char*, int, const char*, bool)> display_tree_recursive = 
+    [&](const char* dir_path, int depth, const char* prefix, bool is_last) {
+        if (max_depth > 0 && depth > max_depth) {
+            return;
+        }
+        
+        DIR *d = opendir(dir_path);
+        if (!d) return;
+        
+        // Collect and sort entries
+        std::vector<std::string> entries;
+        std::vector<bool> is_dirs;
+        struct dirent *entry;
+        
+        while ((entry = readdir(d)) != NULL) {
+            // Skip . and .. entries
+            if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+                continue;
+            }
+            
+            // Skip hidden files if not showing them
+            if (!show_hidden && entry->d_name[0] == '.') {
+                continue;
+            }
+            
+            char full_path[MAX_PATH];
+            snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, entry->d_name);
+            
+            struct stat st;
+            if (stat(full_path, &st) != 0) continue;
+            
+            entries.push_back(entry->d_name);
+            is_dirs.push_back(S_ISDIR(st.st_mode));
+        }
+        
+        closedir(d);
+        
+        // Sort entries
+        std::vector<size_t> indices(entries.size());
+        for (size_t i = 0; i < indices.size(); i++) {
+            indices[i] = i;
+        }
+        
+        std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+            if (is_dirs[a] != is_dirs[b]) {
+                return is_dirs[a] > is_dirs[b]; // Directories first
+            }
+            return entries[a] < entries[b]; // Then alphabetically
+        });
+        
+        // Process entries
+        for (size_t i = 0; i < indices.size(); i++) {
+            if (y >= LINES - 5) {
+                mvprintw(y++, 1, "... (more items not shown)");
+                return;
+            }
+            
+            size_t idx = indices[i];
+            const std::string& name = entries[idx];
+            bool is_directory = is_dirs[idx];
+            bool is_entry_last = (i == indices.size() - 1);
+            
+            char full_path[MAX_PATH];
+            snprintf(full_path, sizeof(full_path), "%s/%s", dir_path, name.c_str());
+            
+            struct stat st;
+            if (stat(full_path, &st) != 0) continue;
+            
+            // Create new prefix for children
+            std::string new_prefix = prefix;
+            new_prefix += is_last ? "    " : "|   ";
+            
+            // Display current entry
+            mvprintw(y, 1, "%s%s", prefix, is_entry_last ? "`-- " : "|-- ");
+            
+            if (is_directory) {
+                attron(COLOR_PAIR(1) | A_BOLD);
+                mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                attroff(COLOR_PAIR(1) | A_BOLD);
+                dir_count++;
+                y++;
+                
+                // Recurse into directory
+                display_tree_recursive(full_path, depth + 1, new_prefix.c_str(), is_entry_last);
+            } else {
+                if (st.st_mode & S_IXUSR) {
+                    attron(COLOR_PAIR(2) | A_BOLD);
+                    mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                    attroff(COLOR_PAIR(2) | A_BOLD);
+                } else if (S_ISLNK(st.st_mode)) {
+                    attron(COLOR_PAIR(3) | A_BOLD);
+                    mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                    attroff(COLOR_PAIR(3) | A_BOLD);
+                } else {
+                    mvprintw(y, 1 + strlen(prefix) + 4, "%s", name.c_str());
+                }
+                file_count++;
+                y++;
+            }
+        }
+    };
+    
+    // Start recursive display
+    display_tree_recursive(path, 1, "", true);
+    
+    // Print summary
+    mvprintw(y + 1, 1, "\n%d directories, %d files", dir_count, file_count);
+    
+    // Instructions to continue
+    mvprintw(y + 3, 1, "Press any key to continue...");
+    refresh();
+    getch();
+}
+
+// Interactive version of the tree command
+void cmd_tree_interactive(void) {
+    clear();
+    
+    // Get arguments from user
+    mvprintw(1, 1, "Tree Command - Directory Structure Viewer");
+    mvprintw(3, 1, "Usage: tree [options] [directory]");
+    mvprintw(4, 1, "Options:");
+    mvprintw(5, 1, "  -a, --all    Show hidden files");
+    mvprintw(6, 1, "  -L LEVEL     Limit display to LEVEL directories deep");
+    mvprintw(7, 1, "  -i           Interactive mode (this screen)");
+    mvprintw(9, 1, "Examples:");
+    mvprintw(10, 1, "  tree            - Show current directory structure");
+    mvprintw(11, 1, "  tree /etc       - Show structure of /etc");
+    mvprintw(12, 1, "  tree -a         - Show all files including hidden ones");
+    mvprintw(13, 1, "  tree -L 2       - Limit depth to 2 levels");
+    mvprintw(15, 1, "Enter path (default is current directory): ");
+    refresh();
+    
+    // Get user input for path
+    char path_input[MAX_PATH] = {0};
+    int ch;
+    int pos = 0;
+    
+    // Allow user to input path or just press Enter for default
+    while ((ch = getch()) != '\n' && pos < MAX_PATH - 1) {
+        if (ch >= 32 && ch <= 126) { // Printable characters
+            path_input[pos++] = ch;
+            printw("%c", ch);
+        } else if (ch == KEY_BACKSPACE || ch == 127) { // Backspace
+            if (pos > 0) {
+                pos--;
+                printw("\b \b"); // Erase character
+            }
+        }
+        refresh();
+    }
+    path_input[pos] = '\0';
+    
+    // Use current directory if no path entered
+    const char *path = (path_input[0] == '\0') ? "." : path_input;
+    
+    // Collect options (simplified for this implementation)
+    bool show_hidden = false;
+    int max_depth = -1; // -1 means unlimited
+    
+    // Ask about hidden files
+    mvprintw(17, 1, "Show hidden files? (y/n): ");
+    refresh();
+    ch = getch();
+    show_hidden = (ch == 'y' || ch == 'Y');
+    printw("%c", ch);
+    
+    // Ask about depth limit
+    mvprintw(19, 1, "Limit depth? (Enter number or 0 for unlimited): ");
+    refresh();
+    char depth_input[10] = {0};
+    pos = 0;
+    
+    while ((ch = getch()) != '\n' && pos < 9) {
+        if (ch >= '0' && ch <= '9') {
+            depth_input[pos++] = ch;
+            printw("%c", ch);
+        } else if (ch == KEY_BACKSPACE || ch == 127) {
+            if (pos > 0) {
+                pos--;
+                printw("\b \b");
+            }
+        }
+        refresh();
+    }
+    depth_input[pos] = '\0';
+    
+    if (depth_input[0] != '\0') {
+        max_depth = atoi(depth_input);
+        if (max_depth == 0) max_depth = -1; // Convert 0 to unlimited
+    }
+    
+    // Clear screen and start displaying tree
+    clear();
+    
+    DIR *dir = opendir(path);
+    if (!dir) {
+        mvprintw(1, 1, "Error: Cannot open directory '%s': %s", path, strerror(errno));
+        refresh();
+        getch();
+        return;
+    }
+    
+    // Print header
+    char resolved_path[PATH_MAX];
+    if (realpath(path, resolved_path) == NULL) {
+        strncpy(resolved_path, path, PATH_MAX);
+    }
+    
+    attron(COLOR_PAIR(1) | A_BOLD);
+    mvprintw(1, 1, "%s", resolved_path);
+    attroff(COLOR_PAIR(1) | A_BOLD);
+    
+    // Counters for summary
+    int dir_count = 0;
+    int file_count = 0;
+    
+    // Current display position
+    int y = 3;
+    
+    // Helper function to display tree (simple version without recursion)
+    // Instead, we'll just display the top level for simplicity
+    struct dirent *entry;
+    
+    // Collect all entries for sorting
+    std::vector<std::string> entries;
+    std::vector<bool> is_dir;
+    
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip . and .. entries
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        // Skip hidden files if not showing them
+        if (!show_hidden && entry->d_name[0] == '.') {
+            continue;
+        }
+        
+        char full_path[MAX_PATH];
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, entry->d_name);
+        
+        struct stat st;
+        if (stat(full_path, &st) != 0) continue;
+        
+        entries.push_back(entry->d_name);
+        is_dir.push_back(S_ISDIR(st.st_mode));
+    }
+    
+    // Sort entries (directories first, then alphabetically)
+    std::vector<size_t> indices(entries.size());
+    for (size_t i = 0; i < indices.size(); i++) {
+        indices[i] = i;
+    }
+    
+    std::sort(indices.begin(), indices.end(), [&](size_t a, size_t b) {
+        if (is_dir[a] != is_dir[b]) {
+            return is_dir[a] > is_dir[b]; // Directories first
+        }
+        return entries[a] < entries[b]; // Then alphabetically
+    });
+    
+    // Display entries with tree-like structure
+    for (size_t i = 0; i < indices.size(); i++) {
+        size_t idx = indices[i];
+        const std::string& name = entries[idx];
+        bool is_directory = is_dir[idx];
+        
+        char full_path[MAX_PATH];
+        snprintf(full_path, sizeof(full_path), "%s/%s", path, name.c_str());
+        
+        struct stat st;
+        if (stat(full_path, &st) != 0) continue;
+        
+        // Display with appropriate prefix and color
+        bool is_last = (i == indices.size() - 1);
+        
+        if (is_last) {
+            mvprintw(y, 1, "`-- ");
+        } else {
+            mvprintw(y, 1, "|-- ");
+        }
+        
+        if (is_directory) {
+            attron(COLOR_PAIR(1) | A_BOLD); // Blue for directories
+            mvprintw(y, 5, "%s/", name.c_str());
+            attroff(COLOR_PAIR(1) | A_BOLD);
+            dir_count++;
+        } else if (st.st_mode & S_IXUSR) {
+            attron(COLOR_PAIR(2) | A_BOLD); // Green for executables
+            mvprintw(y, 5, "%s", name.c_str());
+            attroff(COLOR_PAIR(2) | A_BOLD);
+            file_count++;
+        } else {
+            mvprintw(y, 5, "%s", name.c_str());
+            file_count++;
+        }
+        
+        y++;
+        
+        // Limit display to fit on screen
+        if (y >= LINES - 5) {
+            mvprintw(y++, 1, "... (more items not shown)");
+            break;
+        }
+    }
+    
+    closedir(dir);
+    
+    // Print summary
+    mvprintw(y + 1, 1, "\n%d directories, %d files", dir_count, file_count);
+    
+    // Instructions to continue
+    mvprintw(y + 3, 1, "Press any key to continue...");
+    refresh();
+    getch();
 }
 
 int main(void) {
