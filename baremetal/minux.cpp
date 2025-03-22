@@ -20,6 +20,8 @@
 #include <fstream>
 #include <string>
 #include <cstring>
+#include <pwd.h>    // For getpwuid
+#include <grp.h>    // For getgrgid
 
 // Define GPIO constants for systems without pigpio
 #define PI_INPUT 0
@@ -343,36 +345,127 @@ void cmd_ls(const char *path) {
     // Initialize color pairs for ls
     init_pair(1, COLOR_BLUE, COLOR_BLACK);   // Directories
     init_pair(2, COLOR_GREEN, COLOR_BLACK);  // Executables
+    init_pair(3, COLOR_CYAN, COLOR_BLACK);   // Symlinks
     
-    int x = 2;
-    while ((entry = readdir(dir)) != NULL) {
-        struct stat st;
-        char full_path[MAX_PATH];
-        snprintf(full_path, sizeof(full_path), "%s/%s", target_path, entry->d_name);
-        
-        if (stat(full_path, &st) == 0) {
-            if (x > screen_width - 25) {
-                x = 2;
-                y++;
-            }
+    // Print header row
+    mvprintw(y++, 1, "%-10s %-8s %-8s %8s %-12s %s", "Permissions", "Owner", "Group", "Size", "Modified", "Name");
+    mvprintw(y++, 1, "--------------------------------------------------------------------------");
+
+    // Sort entries - we'll use a simple array for now
+    struct dirent *entries[1024]; // Assuming no more than 1024 entries
+    int entry_count = 0;
+    
+    while ((entry = readdir(dir)) != NULL && entry_count < 1024) {
+        entries[entry_count++] = entry;
+    }
+    
+    // Simple bubble sort to order entries (directories first, then files)
+    for (int i = 0; i < entry_count - 1; i++) {
+        for (int j = 0; j < entry_count - i - 1; j++) {
+            struct stat st_j, st_j1;
+            char full_path_j[MAX_PATH], full_path_j1[MAX_PATH];
             
-            if (S_ISDIR(st.st_mode)) {
-                attron(COLOR_PAIR(1) | A_BOLD);
-                mvprintw(y, x, "%-20s", entry->d_name);
-                attroff(COLOR_PAIR(1) | A_BOLD);
+            snprintf(full_path_j, sizeof(full_path_j), "%s/%s", target_path, entries[j]->d_name);
+            snprintf(full_path_j1, sizeof(full_path_j1), "%s/%s", target_path, entries[j+1]->d_name);
+            
+            stat(full_path_j, &st_j);
+            stat(full_path_j1, &st_j1);
+            
+            // Directories come first, then sort alphabetically
+            bool j_is_dir = S_ISDIR(st_j.st_mode);
+            bool j1_is_dir = S_ISDIR(st_j1.st_mode);
+            
+            if ((j_is_dir && !j1_is_dir) || 
+                (j_is_dir == j1_is_dir && strcasecmp(entries[j]->d_name, entries[j+1]->d_name) > 0)) {
+                // Swap
+                struct dirent *temp = entries[j];
+                entries[j] = entries[j+1];
+                entries[j+1] = temp;
             }
-            else if (st.st_mode & S_IXUSR) {
-                attron(COLOR_PAIR(2) | A_BOLD);
-                mvprintw(y, x, "%-20s", entry->d_name);
-                attroff(COLOR_PAIR(2) | A_BOLD);
-            }
-            else {
-                mvprintw(y, x, "%-20s", entry->d_name);
-            }
-            x += 22;
         }
     }
-    mvprintw(y + 2, 1, " ");  // Move cursor to end with a space
+    
+    // Display entries
+    for (int i = 0; i < entry_count; i++) {
+        struct stat st;
+        char full_path[MAX_PATH];
+        snprintf(full_path, sizeof(full_path), "%s/%s", target_path, entries[i]->d_name);
+        
+        if (stat(full_path, &st) == 0) {
+            // Format permissions
+            char perm[11];
+            perm[0] = S_ISDIR(st.st_mode) ? 'd' : (S_ISLNK(st.st_mode) ? 'l' : '-');
+            perm[1] = (st.st_mode & S_IRUSR) ? 'r' : '-';
+            perm[2] = (st.st_mode & S_IWUSR) ? 'w' : '-';
+            perm[3] = (st.st_mode & S_IXUSR) ? 'x' : '-';
+            perm[4] = (st.st_mode & S_IRGRP) ? 'r' : '-';
+            perm[5] = (st.st_mode & S_IWGRP) ? 'w' : '-';
+            perm[6] = (st.st_mode & S_IXGRP) ? 'x' : '-';
+            perm[7] = (st.st_mode & S_IROTH) ? 'r' : '-';
+            perm[8] = (st.st_mode & S_IWOTH) ? 'w' : '-';
+            perm[9] = (st.st_mode & S_IXOTH) ? 'x' : '-';
+            perm[10] = '\0';
+            
+            // Get owner and group
+            char owner[32] = "unknown";
+            char group[32] = "unknown";
+            
+            // Try to get username and group name - handle gracefully if functions aren't available
+            struct passwd *pw = getpwuid(st.st_uid);
+            struct group *gr = getgrgid(st.st_gid);
+            
+            if (pw != NULL) {
+                strncpy(owner, pw->pw_name, sizeof(owner) - 1);
+                owner[sizeof(owner) - 1] = '\0'; // Ensure null termination
+            } else {
+                // Just use the numeric UID if lookup fails
+                snprintf(owner, sizeof(owner), "%d", st.st_uid);
+            }
+            
+            if (gr != NULL) {
+                strncpy(group, gr->gr_name, sizeof(group) - 1);
+                group[sizeof(group) - 1] = '\0'; // Ensure null termination
+            } else {
+                // Just use the numeric GID if lookup fails
+                snprintf(group, sizeof(group), "%d", st.st_gid);
+            }
+            
+            // Format size
+            char size_str[32];
+            if (st.st_size < 1024) {
+                snprintf(size_str, sizeof(size_str), "%d", (int)st.st_size);
+            } else if (st.st_size < 1024 * 1024) {
+                snprintf(size_str, sizeof(size_str), "%.1fK", st.st_size / 1024.0);
+            } else if (st.st_size < 1024 * 1024 * 1024) {
+                snprintf(size_str, sizeof(size_str), "%.1fM", st.st_size / (1024.0 * 1024.0));
+            } else {
+                snprintf(size_str, sizeof(size_str), "%.1fG", st.st_size / (1024.0 * 1024.0 * 1024.0));
+            }
+            
+            // Format time
+            char time_str[32];
+            struct tm *tm = localtime(&st.st_mtime);
+            strftime(time_str, sizeof(time_str), "%b %d %H:%M", tm);
+            
+            // Apply appropriate color based on file type
+            if (S_ISDIR(st.st_mode)) {
+                attron(COLOR_PAIR(1) | A_BOLD);
+            } else if (st.st_mode & S_IXUSR) {
+                attron(COLOR_PAIR(2) | A_BOLD);
+            } else if (S_ISLNK(st.st_mode)) {
+                attron(COLOR_PAIR(3) | A_BOLD);
+            }
+            
+            // Print the entry details
+            mvprintw(y++, 1, "%-10s %-8s %-8s %8s %-12s %s", 
+                    perm, owner, group, size_str, time_str, entries[i]->d_name);
+            
+            // Restore normal attributes
+            attroff(COLOR_PAIR(1) | COLOR_PAIR(2) | COLOR_PAIR(3) | A_BOLD);
+        }
+    }
+    
+    mvprintw(y + 1, 1, " ");  // Move cursor to end with a space
     refresh();
     closedir(dir);
 }
@@ -889,7 +982,11 @@ void update_status_bar_error(ErrorConsole *console) {
 }
 
 void show_prompt(void) {
-    printw("MINUX> ");
+    // Move to a new line first to ensure we don't get double prompts
+    printw("\n");
+    
+    // Display a more informative prompt with current path
+    printw("minux > %s > ", current_path);
     refresh();
 }
 
@@ -1017,11 +1114,16 @@ void handle_command(const char *cmd) {
     char *end = start + strlen(start) - 1;
     while (end > start && isspace(*end)) *end-- = '\0';
     
-    if (!*start) return;  // Empty command
+    if (!*start) {
+        // Empty command, just show the prompt
+        show_prompt();
+        return;  
+    }
     
     // Handle "test camera" as a special case
     if (strcmp(start, "test camera") == 0) {
         test_camera();
+        show_prompt();
         return;
     }
     
@@ -1041,9 +1143,11 @@ void handle_command(const char *cmd) {
     }
     else if (strcmp(args[0], "ls") == 0) {
         cmd_ls(argc > 1 ? args[1] : NULL);
+        show_prompt();
     }
     else if (strcmp(args[0], "cd") == 0) {
         cmd_cd(argc > 1 ? args[1] : NULL);
+        show_prompt();
     }
     else {
         // Look for command in command table
@@ -1054,6 +1158,7 @@ void handle_command(const char *cmd) {
             if (strcmp(args[0], cmd_entry->name) == 0) {
                 if (cmd_entry->func) {
                     cmd_entry->func();
+                    show_prompt();
                     return;
                 }
             }
@@ -1072,6 +1177,7 @@ void handle_command(const char *cmd) {
             log_error(error_console, ERROR_WARNING, "MINUX", 
                      "Unknown command: %s", args[0]);
         }
+        show_prompt();
     }
 }
 
@@ -1333,11 +1439,12 @@ int main(void) {
     move(y, 0);
     refresh();
 
+    // Show the initial prompt
+    show_prompt();
+
     char cmd[MAX_CMD_LENGTH];
     int cmd_pos = 0;
     int ch;
-
-    show_prompt();
 
     while (1) {
         ch = getch();
@@ -1355,10 +1462,10 @@ int main(void) {
         switch (ch) {
             case '\n':
                 cmd[cmd_pos] = '\0';
-                printw("\n");
+                // No need to print a newline here, show_prompt() will do it
                 handle_command(cmd);
                 cmd_pos = 0;
-                show_prompt();
+                // Don't call show_prompt() here, it's called in handle_command()
                 break;
 
             case KEY_BACKSPACE:
