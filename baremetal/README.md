@@ -3,6 +3,7 @@
 A lightweight, ncurses-based file explorer with multi-tab support and modern features, designed for minimal resource usage and maximum efficiency.
 
 
+
 ## Installation and Usage
 
 ### Prerequisites
@@ -342,4 +343,3 @@ sudo apt-get install libcamera-dev
 - The command also controls GPIO pins to manage the IR-Cut filter for switching between day and night modes.
 - Captured images will be saved in the `test_images` directory within the current working directory.
 
-... existing content ...
