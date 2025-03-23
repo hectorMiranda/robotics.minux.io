@@ -2842,6 +2842,8 @@ int main(void) {
     init_windows();
     getcwd(current_path, sizeof(current_path));
 
+    display_welcome_banner();
+
     // Show welcome message with version
     clear();
     int y = 1;
