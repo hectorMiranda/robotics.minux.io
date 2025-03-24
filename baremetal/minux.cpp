@@ -31,6 +31,10 @@
 #define PI_OUTPUT 1
 #define PI_ALT0 4
 
+// Add these definitions for command history
+#define MAX_HISTORY 100
+#define HISTORY_FILE ".minux_history"
+
 // Try to include pigpio only if the compiler flag indicates it's available
 #ifndef HAS_PIGPIO
     #define HAS_PIGPIO 0
@@ -55,6 +59,11 @@
 #define MAX_ARGS 32
 #define MAX_PATH 4096
 #define STATUS_BAR_HEIGHT 1
+
+// Forward declarations for all functions (add these before they're used)
+static inline int min(int a, int b) {
+    return (a < b) ? a : b;
+}
 
 // Serial communication structure
 typedef struct {
@@ -91,6 +100,23 @@ void test_camera(void);
 void cmd_tree(void);
 void cmd_tree_interactive(void); // Add separate function for interactive mode
 void cmd_cat(const char *filepath); // Add cat command prototype
+void cmd_history(void);
+void cmd_log(const char *message);
+void add_to_history(const char *cmd);
+void load_history(void);
+void save_history(void);
+char *get_history_entry(int index);
+int history_size();
+
+// Function declarations that were missing
+void init_windows(void);
+void cleanup(void);
+void draw_status_bar(void);
+void draw_error_status_bar(const char *error_msg);
+void handle_command(const char *cmd);
+void show_prompt(void);
+void view_file_contents(const char *filepath);
+static int levenshtein_distance(const char *s1, const char *s2);
 
 // Command structure
 typedef struct {
@@ -115,6 +141,8 @@ Command commands[] = {
     {"serial", serial_monitor, "Open serial monitor for device communication"},
     {"tree", cmd_tree, "Display directory structure in a tree-like format"},
     {"cat", NULL, "Display file contents"},   // Special handling for args
+    {"history", cmd_history, "Display command history"},  // Add history command
+    {"log", NULL, "Add entry to log file"},   // Special handling for args
     {NULL, NULL, NULL}
 };
 
@@ -132,18 +160,10 @@ SerialPort serial_port = {
     .is_connected = 0
 };
 
-// Function declarations
-void init_windows(void);
-void cleanup(void);
-void draw_status_bar(void);
-void draw_error_status_bar(const char *error_msg); // Add this declaration
-void handle_command(const char *cmd);
-void show_prompt(void);
-void view_file_contents(const char *filepath); // Add this declaration too
-static int levenshtein_distance(const char *s1, const char *s2);
-static inline int min(int a, int b) {
-    return (a < b) ? a : b;
-}
+// Add these global variables with other globals
+char *command_history[MAX_HISTORY];
+int history_count = 0;
+int history_position = -1;
 
 // Define the GPIO pin information structure
 typedef struct {
@@ -517,6 +537,11 @@ void cmd_gpio(void) {
 
 // Update handle_command to not clear before running the tree command
 void handle_command(const char *cmd) {
+    // Add to history if not empty
+    if (cmd && *cmd) {
+        add_to_history(cmd);
+    }
+    
     char *args[MAX_ARGS];
     char cmd_copy[MAX_CMD_LENGTH];
     strncpy(cmd_copy, cmd, MAX_CMD_LENGTH - 1);
@@ -733,6 +758,22 @@ void handle_command(const char *cmd) {
         }
         show_prompt();
     }
+    else if (strcmp(args[0], "history") == 0) {
+        cmd_history();
+        show_prompt();
+    }
+    else if (strcmp(args[0], "log") == 0) {
+        // If there are arguments, combine them into a single message
+        if (argc > 1) {
+            // Get the original command string and extract everything after "log "
+            const char *message = cmd + 4;
+            while (isspace(*message)) message++;
+            cmd_log(message);
+        } else {
+            cmd_log(NULL);  // No arguments
+        }
+        show_prompt();
+    }
     else {
         // Look for command in command table
         Command *best_match = NULL;
@@ -782,7 +823,7 @@ static int levenshtein_distance(const char *s1, const char *s2) {
             int deletion = matrix[i-1][j] + 1;
             int insertion = matrix[i][j-1] + 1;
             int substitution = matrix[i-1][j-1] + cost;
-            matrix[i][j] = min(min(deletion, insertion), substitution);
+            matrix[i][j] = std::min(std::min(deletion, insertion), substitution);
         }
     }
     
@@ -1418,17 +1459,22 @@ void init_windows(void) {
 }
 
 void cleanup(void) {
-    // Delete windows and cleanup ncurses
-    if (status_bar)
-        delwin(status_bar);
-    
-    if (error_console) {
-        // Use a more basic approach instead of error_console_destroy
-        // Just free the allocated memory
-        free(error_console);
+    // Free command history
+    for (int i = 0; i < history_count; i++) {
+        if (command_history[i]) {
+            free(command_history[i]);
+            command_history[i] = NULL;
+        }
     }
     
+    // Destroy error console
+    error_console_destroy(error_console);
     endwin();
+    
+    // Cleanup serial port if it was opened
+    cleanup_serial();
+    
+    printf("Thank you for using MINUX!\n");
 }
 
 void draw_status_bar(void) {
@@ -2790,8 +2836,8 @@ void draw_error_status_bar(const char *error_msg) {
 }
 
 // Update the log_error function to draw the error status bar for important errors
-#define log_error(console, level, subsystem, fmt, ...) do { \
-    error_console_log(console, level, subsystem, fmt, ##__VA_ARGS__); \
+#define log_error_with_status(console, level, subsystem, fmt, ...) do { \
+    log_error(console, level, subsystem, fmt, ##__VA_ARGS__); \
     if (level <= ERROR_ERROR) { \
         char error_buffer[256]; \
         snprintf(error_buffer, sizeof(error_buffer), "%s: " fmt, subsystem, ##__VA_ARGS__); \
@@ -2831,6 +2877,169 @@ void cmd_cat(const char *filepath) {
     
     fclose(file);
     refresh();
+}
+
+// Add these implementations for history and log commands
+void cmd_history(void) {
+    printw("\nCommand History:\n\n");
+    
+    for (int i = 0; i < history_count; i++) {
+        printw("  %3d  %s\n", i + 1, command_history[i]);
+    }
+    
+    printw("\n");
+    refresh();
+}
+
+void cmd_log(const char *message) {
+    if (!message) {
+        log_error_with_status(error_console, ERROR_WARNING, "MINUX", "Usage: log <message>");
+        return;
+    }
+    
+    // Get path to log file in user's home directory
+    const char *home = getenv("HOME");
+    if (!home) {
+        struct passwd *pw = getpwuid(getuid());
+        if (!pw) {
+            log_error_with_status(error_console, ERROR_CRITICAL, "MINUX", "Could not determine home directory");
+            return;
+        }
+        home = pw->pw_dir;
+    }
+    
+    char log_file[MAX_PATH];
+    snprintf(log_file, sizeof(log_file), "%s/.minux/log.txt", home);
+    
+    // Make sure .minux directory exists
+    char dir_path[MAX_PATH];
+    snprintf(dir_path, sizeof(dir_path), "%s/.minux", home);
+    mkdir(dir_path, 0755);
+    
+    // Get current timestamp
+    time_t t = time(NULL);
+    struct tm *tm = localtime(&t);
+    char timestamp[64];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm);
+    
+    // Append to log file
+    FILE *fp = fopen(log_file, "a");
+    if (!fp) {
+        log_error_with_status(error_console, ERROR_CRITICAL, "MINUX", 
+                 "Could not open log file: %s", strerror(errno));
+        return;
+    }
+    
+    fprintf(fp, "[%s] %s\n", timestamp, message);
+    fclose(fp);
+    
+    printw("\nLog entry added: %s\n\n", message);
+    refresh();
+}
+
+// Add history management functions
+void add_to_history(const char *cmd) {
+    // Don't add empty commands or duplicates of the last command
+    if (!cmd || !*cmd || (history_count > 0 && strcmp(cmd, command_history[history_count - 1]) == 0)) {
+        return;
+    }
+    
+    // Add new command to history
+    if (history_count < MAX_HISTORY) {
+        command_history[history_count++] = strdup(cmd);
+    } else {
+        // If history is full, remove oldest entry
+        free(command_history[0]);
+        for (int i = 0; i < MAX_HISTORY - 1; i++) {
+            command_history[i] = command_history[i + 1];
+        }
+        command_history[MAX_HISTORY - 1] = strdup(cmd);
+    }
+    
+    // Reset position to point to the end of history
+    history_position = history_count;
+    
+    // Save history to file
+    save_history();
+}
+
+void load_history(void) {
+    // Get path to history file in user's home directory
+    const char *home = getenv("HOME");
+    if (!home) {
+        struct passwd *pw = getpwuid(getuid());
+        if (!pw) return;
+        home = pw->pw_dir;
+    }
+    
+    // Make sure .minux directory exists
+    char dir_path[MAX_PATH];
+    snprintf(dir_path, sizeof(dir_path), "%s/.minux", home);
+    mkdir(dir_path, 0755);
+    
+    char history_path[MAX_PATH];
+    snprintf(history_path, sizeof(history_path), "%s/.minux/%s", home, HISTORY_FILE);
+    
+    FILE *fp = fopen(history_path, "r");
+    if (!fp) return;
+    
+    char line[MAX_CMD_LENGTH];
+    history_count = 0;
+    
+    while (fgets(line, sizeof(line), fp) && history_count < MAX_HISTORY) {
+        // Remove newline character
+        int len = strlen(line);
+        if (len > 0 && line[len - 1] == '\n') {
+            line[len - 1] = '\0';
+        }
+        
+        if (len > 1) {  // Only add non-empty lines
+            command_history[history_count++] = strdup(line);
+        }
+    }
+    
+    fclose(fp);
+    
+    // Initialize history position to point to the end of history
+    history_position = history_count;
+}
+
+void save_history(void) {
+    // Get path to history file in user's home directory
+    const char *home = getenv("HOME");
+    if (!home) {
+        struct passwd *pw = getpwuid(getuid());
+        if (!pw) return;
+        home = pw->pw_dir;
+    }
+    
+    // Make sure .minux directory exists
+    char dir_path[MAX_PATH];
+    snprintf(dir_path, sizeof(dir_path), "%s/.minux", home);
+    mkdir(dir_path, 0755);
+    
+    char history_path[MAX_PATH];
+    snprintf(history_path, sizeof(history_path), "%s/.minux/%s", home, HISTORY_FILE);
+    
+    FILE *fp = fopen(history_path, "w");
+    if (!fp) return;
+    
+    for (int i = 0; i < history_count; i++) {
+        fprintf(fp, "%s\n", command_history[i]);
+    }
+    
+    fclose(fp);
+}
+
+char *get_history_entry(int index) {
+    if (index < 0 || index >= history_count) {
+        return NULL;
+    }
+    return command_history[index];
+}
+
+int history_size() {
+    return history_count;
 }
 
 int main(void) {
@@ -2901,6 +3110,9 @@ int main(void) {
     move(y, 0);
     refresh();
 
+    // Initialize the command history
+    load_history();
+
     // Show the initial prompt
     show_prompt();
 
@@ -2924,25 +3136,165 @@ int main(void) {
         switch (ch) {
             case '\n':
                 cmd[cmd_pos] = '\0';
-                // No need to print a newline here, show_prompt() will do it
+                printw("\n");  // Add a newline before executing the command
                 handle_command(cmd);
                 cmd_pos = 0;
-                // Don't call show_prompt() here, it's called in handle_command()
+                history_position = history_count;  // Reset history position
                 break;
 
             case KEY_BACKSPACE:
             case 127:  // Also handle DEL key
                 if (cmd_pos > 0) {
                     cmd_pos--;
-                    printw("\b \b");
+                    // Erase character on screen
+                    int y, x;
+                    getyx(stdscr, y, x);
+                    move(y, x - 1);
+                    delch();
+                    refresh();
+                }
+                break;
+                
+            case KEY_UP:  // Previous command in history
+                if (history_position > 0) {
+                    history_position--;
+                    // Clear current command
+                    int y, x, start_x;
+                    getyx(stdscr, y, x);
+                    start_x = x - cmd_pos;
+                    move(y, start_x);
+                    for (int i = 0; i < cmd_pos; i++) {
+                        delch();
+                    }
+                    
+                    // Display the history entry
+                    char *hist_cmd = get_history_entry(history_position);
+                    if (hist_cmd) {
+                        strncpy(cmd, hist_cmd, MAX_CMD_LENGTH - 1);
+                        cmd[MAX_CMD_LENGTH - 1] = '\0';
+                        cmd_pos = strlen(cmd);
+                        printw("%s", cmd);
+                    }
+                }
+                break;
+                
+            case KEY_DOWN:  // Next command in history
+                if (history_position < history_count) {
+                    history_position++;
+                    
+                    // Clear current command
+                    int y, x, start_x;
+                    getyx(stdscr, y, x);
+                    start_x = x - cmd_pos;
+                    move(y, start_x);
+                    for (int i = 0; i < cmd_pos; i++) {
+                        delch();
+                    }
+                    
+                    // If at the end of history, show an empty command
+                    if (history_position == history_count) {
+                        cmd[0] = '\0';
+                        cmd_pos = 0;
+                    } else {
+                        // Display the history entry
+                        char *hist_cmd = get_history_entry(history_position);
+                        if (hist_cmd) {
+                            strncpy(cmd, hist_cmd, MAX_CMD_LENGTH - 1);
+                            cmd[MAX_CMD_LENGTH - 1] = '\0';
+                            cmd_pos = strlen(cmd);
+                            printw("%s", cmd);
+                        }
+                    }
+                }
+                break;
+                
+            case KEY_LEFT:  // Move cursor left
+                if (cmd_pos > 0) {
+                    cmd_pos--;
+                    // Move cursor left
+                    int y, x;
+                    getyx(stdscr, y, x);
+                    move(y, x - 1);
+                    refresh();
+                }
+                break;
+                
+            case KEY_RIGHT:  // Move cursor right
+                if (cmd_pos < (int)strlen(cmd)) {
+                    cmd_pos++;
+                    // Move cursor right
+                    int y, x;
+                    getyx(stdscr, y, x);
+                    move(y, x + 1);
+                    refresh();
+                }
+                break;
+                
+            case KEY_HOME:  // Move to beginning of line
+                {
+                    int y, x, start_x;
+                    getyx(stdscr, y, x);
+                    start_x = x - cmd_pos;
+                    move(y, start_x);
+                    cmd_pos = 0;
+                    refresh();
+                }
+                break;
+                
+            case KEY_END:  // Move to end of line
+                {
+                    int y, x, start_x;
+                    getyx(stdscr, y, x);
+                    start_x = x - cmd_pos;
+                    cmd_pos = (int)strlen(cmd);
+                    move(y, start_x + cmd_pos);
+                    refresh();
+                }
+                break;
+                
+            case KEY_DC:  // Delete key (delete under cursor)
+                if (cmd_pos < (int)strlen(cmd)) {
+                    // Shift all characters left
+                    memmove(&cmd[cmd_pos], &cmd[cmd_pos + 1], strlen(cmd) - cmd_pos);
+                    
+                    // Redraw the command line
+                    int y, x, start_x;
+                    getyx(stdscr, y, x);
+                    start_x = x - cmd_pos;
+                    move(y, start_x);
+                    for (int i = 0; i < (int)strlen(cmd); i++) {
+                        delch();
+                    }
+                    move(y, start_x);
+                    printw("%s", cmd);
+                    move(y, start_x + cmd_pos);
                     refresh();
                 }
                 break;
 
             default:
                 if (cmd_pos < MAX_CMD_LENGTH - 1 && ch >= 32 && ch <= 126) {
-                    cmd[cmd_pos++] = ch;
-                    printw("%c", ch);
+                    // If cursor is in the middle of the command, make room for the new character
+                    if (cmd_pos < (int)strlen(cmd)) {
+                        memmove(&cmd[cmd_pos + 1], &cmd[cmd_pos], strlen(cmd) - cmd_pos + 1);
+                        
+                        // Insert the character
+                        cmd[cmd_pos] = ch;
+                        
+                        // Redraw the command line from the cursor position
+                        int y, x;
+                        getyx(stdscr, y, x);
+                        insch(ch);  // Insert the character at cursor position
+                        
+                        // Move cursor forward
+                        move(y, x + 1);
+                    } else {
+                        // Simply append to the end
+                        cmd[cmd_pos] = ch;
+                        cmd[cmd_pos + 1] = '\0';
+                        printw("%c", ch);
+                    }
+                    cmd_pos++;
                     refresh();
                 }
                 break;
