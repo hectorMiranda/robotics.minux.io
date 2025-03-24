@@ -1,6 +1,12 @@
 CXX = g++
-CXXFLAGS = -Wall -Wextra -g -I.
-LDFLAGS = -lncurses -lmenu -lpanel -lpthread -lrt
+CXXFLAGS = -Wall -Wextra -g -I. -std=c++11
+# Detect if we're on Linux
+UNAME_S := $(shell uname -s)
+ifeq ($(UNAME_S),Linux)
+    LDFLAGS = -lncurses -lmenu -lpanel -lpthread -lrt
+else
+    LDFLAGS = -lncurses -lmenu -lpanel -lpthread
+endif
 
 # Improved Raspberry Pi detection
 IS_PI = 0
