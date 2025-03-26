@@ -3165,7 +3165,7 @@ void play_audio_file(const char *filepath) {
                     
                     // Use PowerShell to play the audio file
                     snprintf(cmd, sizeof(cmd), 
-                             "powershell.exe -c \"(New-Object Media.SoundPlayer '%s').PlaySync()\"", 
+                             "powershell.exe -c \"(New-Object Media.SoundPlayer \\\"%s\\\").PlaySync()\" 2>/dev/null", 
                              windows_path);
                 }
                 pclose(path_proc);
@@ -3269,10 +3269,14 @@ void play_tone(int frequency, int duration_ms) {
         fclose(proc_sys_kernel);
     }
     
+    // Ensure frequency is in the valid range for PowerShell's Console.Beep (37-32767 Hz)
+    if (frequency < 37) frequency = 37;
+    if (frequency > 32767) frequency = 32767;
+    
     char cmd[256];
     if (is_wsl) {
         // Use Windows PowerShell to generate a beep in WSL
-        snprintf(cmd, sizeof(cmd), "powershell.exe -c \"[Console]::Beep(%d, %d)\"", 
+        snprintf(cmd, sizeof(cmd), "powershell.exe -c \"[Console]::Beep(%d, %d)\" 2>/dev/null", 
                  frequency, duration_ms);
     }
     #ifdef __WIN32__
@@ -3360,17 +3364,23 @@ void play_scale(const char *scale_name) {
     
     // Play the scale notes
     const int *steps = is_minor ? minor_steps : major_steps;
+    
+    // Play each note in the scale directly using play_note - this already works for individual notes
     for (int i = 0; i < 8; i++) {
         int note_idx = (root_idx + steps[i]) % 12;
         char note[16];
-        snprintf(note, sizeof(note), "%s%d", notes[note_idx], i == 7 ? 5 : 4); // One octave up for the last note
+        snprintf(note, sizeof(note), "%s%d", notes[note_idx], i == 7 ? 5 : 4);
         
         // Print current note
         printw("Playing: %s\n", note);
         refresh();
         
-        // Play the note (300ms per note, 8 notes in scale)
+        // Play the note (300ms per note, 8 notes in scale) using the existing play_note function
+        // This function already handles WSL detection and proper tone generation
         play_note(note, 300);
+        
+        // Add a small delay between notes
+        usleep(100000);  // 100ms pause between notes
     }
 }
 
@@ -3431,6 +3441,23 @@ int main(void) {
         mvprintw(y++, 1, "GPIO Support: Available (run 'gpio' command to view)");
     } else {
         mvprintw(y++, 1, "GPIO Support: Not available (requires Raspberry Pi)");
+    }
+    
+    // Check if running in WSL and display status
+    bool is_wsl = false;
+    FILE *proc_sys_kernel = fopen("/proc/sys/kernel/osrelease", "r");
+    if (proc_sys_kernel) {
+        char buffer[256] = {0};
+        if (fgets(buffer, sizeof(buffer), proc_sys_kernel)) {
+            if (strstr(buffer, "WSL") || strstr(buffer, "Microsoft")) {
+                is_wsl = true;
+            }
+        }
+        fclose(proc_sys_kernel);
+    }
+    
+    if (is_wsl) {
+        mvprintw(y++, 1, "WSL Support: Enabled (audio playback via Windows host)");
     }
     
     // Empty line and help message
