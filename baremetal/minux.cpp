@@ -25,6 +25,7 @@
 #include <vector>
 #include <algorithm>
 #include <functional> // For tree command
+#include <math.h>    // For sin() in tone generation
 
 // Define GPIO constants for systems without pigpio
 #define PI_INPUT 0
@@ -107,6 +108,12 @@ void load_history(void);
 void save_history(void);
 char *get_history_entry(int index);
 int history_size();
+void cmd_play(const char *arg); // Add play command prototype
+void play_audio_file(const char *filepath);
+void play_tone(int frequency, int duration_ms);
+void play_note(const char *note, int duration_ms);
+void play_scale(const char *scale_name);
+double get_note_frequency(const char *note);
 
 // Function declarations that were missing
 void init_windows(void);
@@ -143,6 +150,7 @@ Command commands[] = {
     {"cat", NULL, "Display file contents"},   // Special handling for args
     {"history", cmd_history, "Display command history"},  // Add history command
     {"log", NULL, "Add entry to log file"},   // Special handling for args
+    {"play", NULL, "Play audio files, notes or scales"}, // Add play command
     {NULL, NULL, NULL}
 };
 
@@ -771,6 +779,18 @@ void handle_command(const char *cmd) {
             cmd_log(message);
         } else {
             cmd_log(NULL);  // No arguments
+        }
+        show_prompt();
+    }
+    else if (strcmp(args[0], "play") == 0) {
+        if (argc > 1) {
+            // Get the original command string and extract everything after "play "
+            const char *play_arg = cmd + 5;
+            while (isspace(*play_arg)) play_arg++;
+            cmd_play(play_arg);
+        } else {
+            log_error(error_console, ERROR_WARNING, "MINUX", 
+                     "Usage: play [wav|mp3|\"C:500\"|\"scale A\"]");
         }
         show_prompt();
     }
@@ -3040,6 +3060,318 @@ char *get_history_entry(int index) {
 
 int history_size() {
     return history_count;
+}
+
+// Add these implementations for play commands
+void cmd_play(const char *arg) {
+    if (!arg || !*arg) {
+        log_error(error_console, ERROR_WARNING, "MINUX", "Usage: play [wav|mp3|\"C:500\"|\"scale A\"]");
+        return;
+    }
+    
+    // Check if argument is a scale command
+    if (strncasecmp(arg, "scale ", 6) == 0) {
+        const char *scale_name = arg + 6;
+        while (isspace(*scale_name)) scale_name++;
+        play_scale(scale_name);
+        return;
+    }
+    
+    // Check if argument is a note with duration (format: "C:500")
+    const char *colon = strchr(arg, ':');
+    if (colon) {
+        char note[16] = {0};
+        int note_len = colon - arg;
+        if (note_len < 16) {
+            strncpy(note, arg, note_len);
+            note[note_len] = '\0';
+            int duration = atoi(colon + 1);
+            if (duration > 0) {
+                play_note(note, duration);
+                return;
+            }
+        }
+    }
+    
+    // Default: treat as audio file path
+    play_audio_file(arg);
+}
+
+void play_audio_file(const char *filepath) {
+    // Check file extension
+    const char *ext = strrchr(filepath, '.');
+    if (!ext) {
+        log_error(error_console, ERROR_WARNING, "MINUX", "Unknown file type: %s", filepath);
+        return;
+    }
+    
+    char cmd[MAX_PATH + 128] = {0};
+    
+    // Check if running in WSL
+    bool is_wsl = false;
+    FILE *proc_sys_kernel = fopen("/proc/sys/kernel/osrelease", "r");
+    if (proc_sys_kernel) {
+        char buffer[256] = {0};
+        if (fgets(buffer, sizeof(buffer), proc_sys_kernel)) {
+            if (strstr(buffer, "WSL") || strstr(buffer, "Microsoft")) {
+                is_wsl = true;
+            }
+        }
+        fclose(proc_sys_kernel);
+    }
+    
+    if (strcasecmp(ext, ".wav") == 0 || strcasecmp(ext, ".mp3") == 0) {
+        if (is_wsl) {
+            // Convert Linux path to Windows path for WSL
+            char windows_path[MAX_PATH + 32] = {0};
+            FILE *path_proc = popen("wslpath -w \"$(pwd)\"", "r");
+            if (path_proc) {
+                if (fgets(windows_path, sizeof(windows_path), path_proc)) {
+                    // Remove newline
+                    size_t len = strlen(windows_path);
+                    if (len > 0 && windows_path[len-1] == '\n') {
+                        windows_path[len-1] = '\0';
+                    }
+                    
+                    // Determine if the path is absolute or relative
+                    if (filepath[0] == '/') {
+                        // It's an absolute path, convert it directly
+                        char full_cmd[MAX_PATH + 64] = {0};
+                        snprintf(full_cmd, sizeof(full_cmd), "wslpath -w \"%s\"", filepath);
+                        FILE *full_path_proc = popen(full_cmd, "r");
+                        if (full_path_proc) {
+                            if (fgets(windows_path, sizeof(windows_path), full_path_proc)) {
+                                // Remove newline
+                                size_t len = strlen(windows_path);
+                                if (len > 0 && windows_path[len-1] == '\n') {
+                                    windows_path[len-1] = '\0';
+                                }
+                            }
+                            pclose(full_path_proc);
+                        }
+                    } else {
+                        // It's a relative path, concatenate with the current directory
+                        strcat(windows_path, "\\");
+                        
+                        // Convert filepath slashes to Windows backslashes
+                        char win_filepath[MAX_PATH] = {0};
+                        strncpy(win_filepath, filepath, sizeof(win_filepath) - 1);
+                        for (char *p = win_filepath; *p; p++) {
+                            if (*p == '/') *p = '\\';
+                        }
+                        
+                        strcat(windows_path, win_filepath);
+                    }
+                    
+                    // Use PowerShell to play the audio file
+                    snprintf(cmd, sizeof(cmd), 
+                             "powershell.exe -c \"(New-Object Media.SoundPlayer '%s').PlaySync()\"", 
+                             windows_path);
+                }
+                pclose(path_proc);
+            }
+        } else {
+            // Standard Linux playback
+            if (strcasecmp(ext, ".wav") == 0) {
+                snprintf(cmd, sizeof(cmd), "aplay -q \"%s\" 2>/dev/null", filepath);
+            } else {
+                snprintf(cmd, sizeof(cmd), "mpg123 -q \"%s\" 2>/dev/null", filepath);
+            }
+        }
+    } else {
+        log_error(error_console, ERROR_WARNING, "MINUX", "Unsupported audio format: %s", ext);
+        return;
+    }
+    
+    if (cmd[0] == '\0') {
+        log_error(error_console, ERROR_WARNING, "MINUX", "Failed to create playback command");
+        return;
+    }
+    
+    printw("\nPlaying %s...\n", filepath);
+    refresh();
+    
+    // Use system() to execute the command
+    int result = system(cmd);
+    if (result != 0) {
+        log_error(error_console, ERROR_WARNING, "MINUX", 
+                 "Failed to play audio file. Make sure you have the required audio players installed.");
+    }
+}
+
+// Function to get frequency for a note
+double get_note_frequency(const char *note) {
+    // Define base frequencies for notes (A4 = 440Hz)
+    static const struct {
+        const char *name;
+        double freq;
+    } base_notes[] = {
+        {"C", 261.63}, // C4
+        {"C#", 277.18}, {"Db", 277.18},
+        {"D", 293.66},
+        {"D#", 311.13}, {"Eb", 311.13},
+        {"E", 329.63},
+        {"F", 349.23},
+        {"F#", 369.99}, {"Gb", 369.99},
+        {"G", 392.00},
+        {"G#", 415.30}, {"Ab", 415.30},
+        {"A", 440.00},
+        {"A#", 466.16}, {"Bb", 466.16},
+        {"B", 493.88},
+        {NULL, 0}
+    };
+    
+    // Make a copy of the note for parsing
+    char note_copy[16];
+    strncpy(note_copy, note, sizeof(note_copy) - 1);
+    note_copy[sizeof(note_copy) - 1] = '\0';
+    
+    // Extract note name and octave
+    char *note_name = note_copy;
+    int octave = 4; // Default octave
+    
+    // If there's a digit in the note, it specifies the octave
+    char *octave_str = strpbrk(note_copy, "0123456789");
+    if (octave_str) {
+        *octave_str = '\0'; // Null-terminate the note name
+        octave = atoi(octave_str);
+    }
+    
+    // Find the base frequency of this note
+    double freq = 0;
+    for (int i = 0; base_notes[i].name != NULL; i++) {
+        if (strcasecmp(note_name, base_notes[i].name) == 0) {
+            freq = base_notes[i].freq;
+            break;
+        }
+    }
+    
+    // Adjust for octave (each octave doubles the frequency)
+    if (freq > 0 && octave != 4) {
+        int octave_diff = octave - 4;
+        freq *= pow(2, octave_diff);
+    }
+    
+    return freq;
+}
+
+void play_tone(int frequency, int duration_ms) {
+    // Check if running in WSL
+    bool is_wsl = false;
+    FILE *proc_sys_kernel = fopen("/proc/sys/kernel/osrelease", "r");
+    if (proc_sys_kernel) {
+        char buffer[256] = {0};
+        if (fgets(buffer, sizeof(buffer), proc_sys_kernel)) {
+            if (strstr(buffer, "WSL") || strstr(buffer, "Microsoft")) {
+                is_wsl = true;
+            }
+        }
+        fclose(proc_sys_kernel);
+    }
+    
+    char cmd[256];
+    if (is_wsl) {
+        // Use Windows PowerShell to generate a beep in WSL
+        snprintf(cmd, sizeof(cmd), "powershell.exe -c \"[Console]::Beep(%d, %d)\"", 
+                 frequency, duration_ms);
+    }
+    #ifdef __WIN32__
+    // Windows version (uses PowerShell to generate beep)
+    else {
+        snprintf(cmd, sizeof(cmd), "powershell -c \"[Console]::Beep(%d, %d)\"", 
+                 frequency, duration_ms);
+    }
+    #else
+    // Linux version (uses beep utility)
+    else {
+        snprintf(cmd, sizeof(cmd), "beep -f %d -l %d 2>/dev/null", frequency, duration_ms);
+    }
+    #endif
+    
+    system(cmd);
+    
+    // Sleep a bit to avoid notes running into each other
+    usleep(50000); // 50ms pause
+}
+
+void play_note(const char *note, int duration_ms) {
+    double freq = get_note_frequency(note);
+    if (freq <= 0) {
+        log_error(error_console, ERROR_WARNING, "MINUX", "Unknown note: %s", note);
+        return;
+    }
+    
+    printw("\nPlaying note %s (%.2f Hz) for %d ms\n", note, freq, duration_ms);
+    refresh();
+    
+    play_tone((int)freq, duration_ms);
+}
+
+void play_scale(const char *scale_name) {
+    if (!scale_name || !*scale_name) {
+        log_error(error_console, ERROR_WARNING, "MINUX", "Please specify a scale (e.g., 'C', 'Am')");
+        return;
+    }
+    
+    // Determine scale root note and whether it's major or minor
+    char root_note[16] = {0};
+    bool is_minor = false;
+    
+    strncpy(root_note, scale_name, sizeof(root_note) - 1);
+    root_note[sizeof(root_note) - 1] = '\0';
+    
+    // Check if the scale is minor (ends with 'm' or is lowercase)
+    int len = strlen(root_note);
+    if (len > 0) {
+        if (root_note[len - 1] == 'm') {
+            is_minor = true;
+            root_note[len - 1] = '\0'; // Remove the 'm'
+        } else if (islower(root_note[0])) {
+            is_minor = true;
+            root_note[0] = toupper(root_note[0]); // Capitalize for note lookup
+        }
+    }
+    
+    // Define whole and half steps for major and minor scales
+    // W = whole step (2 semitones), H = half step (1 semitone)
+    // Major scale: W-W-H-W-W-W-H
+    // Minor scale: W-H-W-W-H-W-W
+    const char *notes[] = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"};
+    const int major_steps[] = {0, 2, 4, 5, 7, 9, 11, 12}; // Semitones from root
+    const int minor_steps[] = {0, 2, 3, 5, 7, 8, 10, 12}; // Semitones from root
+    
+    // Find root note index
+    int root_idx = -1;
+    for (int i = 0; i < 12; i++) {
+        if (strcmp(root_note, notes[i]) == 0) {
+            root_idx = i;
+            break;
+        }
+    }
+    
+    if (root_idx == -1) {
+        log_error(error_console, ERROR_WARNING, "MINUX", "Unknown root note: %s", root_note);
+        return;
+    }
+    
+    // Print scale information
+    printw("\nPlaying %s %s scale\n", root_note, is_minor ? "minor" : "major");
+    refresh();
+    
+    // Play the scale notes
+    const int *steps = is_minor ? minor_steps : major_steps;
+    for (int i = 0; i < 8; i++) {
+        int note_idx = (root_idx + steps[i]) % 12;
+        char note[16];
+        snprintf(note, sizeof(note), "%s%d", notes[note_idx], i == 7 ? 5 : 4); // One octave up for the last note
+        
+        // Print current note
+        printw("Playing: %s\n", note);
+        refresh();
+        
+        // Play the note (300ms per note, 8 notes in scale)
+        play_note(note, 300);
+    }
 }
 
 int main(void) {
