@@ -115,6 +115,17 @@ void play_note(const char *note, int duration_ms);
 void play_scale(const char *scale_name);
 double get_note_frequency(const char *note);
 
+// Todo App function prototypes
+void cmd_todo(const char *arg);
+void todo_add(const char *description);
+void todo_list(void);
+void todo_done(int task_id);
+void todo_remove(int task_id);
+void todo_clear(void);
+void todo_help(void);
+void load_tasks(void);
+void save_tasks(void);
+
 // Function declarations that were missing
 void init_windows(void);
 void cleanup(void);
@@ -151,6 +162,7 @@ Command commands[] = {
     {"history", cmd_history, "Display command history"},  // Add history command
     {"log", NULL, "Add entry to log file"},   // Special handling for args
     {"play", NULL, "Play audio files, notes or scales"}, // Add play command
+    {"todo", NULL, "Task management (use 'todo help' for options)"}, // Add todo command
     {NULL, NULL, NULL}
 };
 
@@ -791,6 +803,18 @@ void handle_command(const char *cmd) {
         } else {
             log_error(error_console, ERROR_WARNING, "MINUX", 
                      "Usage: play [wav|mp3|\"C:500\"|\"scale A\"]");
+        }
+        show_prompt();
+    }
+    else if (strcmp(args[0], "todo") == 0) {
+        if (argc > 1) {
+            // Get the original command string and extract everything after "todo "
+            const char *todo_arg = cmd + 5;
+            while (isspace(*todo_arg)) todo_arg++;
+            cmd_todo(todo_arg);
+        } else {
+            // Default behavior is to list tasks
+            todo_list();
         }
         show_prompt();
     }
@@ -3381,6 +3405,305 @@ void play_scale(const char *scale_name) {
         
         // Add a small delay between notes
         usleep(100000);  // 100ms pause between notes
+    }
+}
+
+// Todo App definitions
+#define MAX_TASKS 100
+#define TODO_FILE "todo.dat"
+
+typedef struct {
+    char description[MAX_CMD_LENGTH];
+    bool completed;
+    time_t created_at;
+    time_t completed_at;
+} Task;
+
+// Global todo variables
+Task tasks[MAX_TASKS];
+int task_count = 0;
+
+// Todo App function prototypes
+void cmd_todo(const char *arg);
+void todo_add(const char *description);
+void todo_list(void);
+void todo_done(int task_id);
+void todo_remove(int task_id);
+void todo_clear(void);
+void todo_help(void);
+void load_tasks(void);
+void save_tasks(void);
+
+// Todo App implementations
+void load_tasks(void) {
+    // Get path to todo file in user's home directory
+    const char *home = getenv("HOME");
+    if (!home) {
+        struct passwd *pw = getpwuid(getuid());
+        if (!pw) return;
+        home = pw->pw_dir;
+    }
+    
+    // Make sure .minux directory exists
+    char dir_path[MAX_PATH];
+    snprintf(dir_path, sizeof(dir_path), "%s/.minux", home);
+    mkdir(dir_path, 0755);
+    
+    char todo_path[MAX_PATH];
+    snprintf(todo_path, sizeof(todo_path), "%s/.minux/%s", home, TODO_FILE);
+    
+    FILE *fp = fopen(todo_path, "rb");
+    if (!fp) return;
+    
+    // Read task count
+    if (fread(&task_count, sizeof(int), 1, fp) != 1) {
+        fclose(fp);
+        return;
+    }
+    
+    // Ensure we don't exceed MAX_TASKS
+    if (task_count > MAX_TASKS) {
+        task_count = MAX_TASKS;
+    }
+    
+    // Read tasks
+    if (fread(tasks, sizeof(Task), task_count, fp) != (size_t)task_count) {
+        task_count = 0;
+    }
+    
+    fclose(fp);
+}
+
+void save_tasks(void) {
+    // Get path to todo file in user's home directory
+    const char *home = getenv("HOME");
+    if (!home) {
+        struct passwd *pw = getpwuid(getuid());
+        if (!pw) return;
+        home = pw->pw_dir;
+    }
+    
+    // Make sure .minux directory exists
+    char dir_path[MAX_PATH];
+    snprintf(dir_path, sizeof(dir_path), "%s/.minux", home);
+    mkdir(dir_path, 0755);
+    
+    char todo_path[MAX_PATH];
+    snprintf(todo_path, sizeof(todo_path), "%s/.minux/%s", home, TODO_FILE);
+    
+    FILE *fp = fopen(todo_path, "wb");
+    if (!fp) {
+        log_error(error_console, ERROR_WARNING, "TODO", "Failed to save tasks");
+        return;
+    }
+    
+    // Write task count
+    fwrite(&task_count, sizeof(int), 1, fp);
+    
+    // Write tasks
+    fwrite(tasks, sizeof(Task), task_count, fp);
+    
+    fclose(fp);
+}
+
+void todo_add(const char *description) {
+    if (!description || !*description) {
+        log_error(error_console, ERROR_WARNING, "TODO", "Task description cannot be empty");
+        return;
+    }
+    
+    if (task_count >= MAX_TASKS) {
+        log_error(error_console, ERROR_WARNING, "TODO", "Maximum number of tasks reached (100)");
+        return;
+    }
+    
+    // Add the new task
+    strncpy(tasks[task_count].description, description, MAX_CMD_LENGTH - 1);
+    tasks[task_count].description[MAX_CMD_LENGTH - 1] = '\0';
+    tasks[task_count].completed = false;
+    tasks[task_count].created_at = time(NULL);
+    tasks[task_count].completed_at = 0;
+    
+    task_count++;
+    
+    printw("Task added: %s\n", description);
+    
+    // Save the updated task list
+    save_tasks();
+}
+
+void todo_list(void) {
+    if (task_count == 0) {
+        printw("No tasks. Use 'todo add <description>' to add a task.\n");
+        return;
+    }
+    
+    printw("\n");
+    printw("ID | Status | Date       | Description\n");
+    printw("---+--------+------------+--------------------------\n");
+    
+    for (int i = 0; i < task_count; i++) {
+        struct tm *tm_info;
+        char date_str[20];
+        
+        if (tasks[i].completed) {
+            tm_info = localtime(&tasks[i].completed_at);
+        } else {
+            tm_info = localtime(&tasks[i].created_at);
+        }
+        
+        strftime(date_str, sizeof(date_str), "%Y-%m-%d", tm_info);
+        
+        printw("%2d | [%s] | %s | %s\n", 
+               i + 1, 
+               tasks[i].completed ? "X" : " ", 
+               date_str,
+               tasks[i].description);
+    }
+    
+    printw("\n");
+}
+
+void todo_done(int task_id) {
+    // Task IDs are 1-based for the user, but 0-based in the array
+    int index = task_id - 1;
+    
+    if (index < 0 || index >= task_count) {
+        log_error(error_console, ERROR_WARNING, "TODO", "Invalid task ID: %d", task_id);
+        return;
+    }
+    
+    // Mark the task as completed
+    tasks[index].completed = true;
+    tasks[index].completed_at = time(NULL);
+    
+    printw("Task %d marked as completed: %s\n", task_id, tasks[index].description);
+    
+    // Save the updated task list
+    save_tasks();
+}
+
+void todo_remove(int task_id) {
+    // Task IDs are 1-based for the user, but 0-based in the array
+    int index = task_id - 1;
+    
+    if (index < 0 || index >= task_count) {
+        log_error(error_console, ERROR_WARNING, "TODO", "Invalid task ID: %d", task_id);
+        return;
+    }
+    
+    printw("Task %d removed: %s\n", task_id, tasks[index].description);
+    
+    // Remove the task by shifting all tasks after it
+    for (int i = index; i < task_count - 1; i++) {
+        tasks[i] = tasks[i + 1];
+    }
+    
+    task_count--;
+    
+    // Save the updated task list
+    save_tasks();
+}
+
+void todo_clear(void) {
+    // Count completed tasks
+    int completed_count = 0;
+    for (int i = 0; i < task_count; i++) {
+        if (tasks[i].completed) {
+            completed_count++;
+        }
+    }
+    
+    if (completed_count == 0) {
+        printw("No completed tasks to clear.\n");
+        return;
+    }
+    
+    // Remove completed tasks
+    int new_count = 0;
+    for (int i = 0; i < task_count; i++) {
+        if (!tasks[i].completed) {
+            tasks[new_count++] = tasks[i];
+        }
+    }
+    
+    int removed = task_count - new_count;
+    task_count = new_count;
+    
+    printw("Cleared %d completed task(s).\n", removed);
+    
+    // Save the updated task list
+    save_tasks();
+}
+
+void todo_help(void) {
+    printw("\nTODO Command Usage:\n");
+    printw("  todo                 - Show task list\n");
+    printw("  todo add <desc>      - Add a new task\n");
+    printw("  todo done <id>       - Mark task as completed\n");
+    printw("  todo remove <id>     - Remove a task\n");
+    printw("  todo clear           - Remove all completed tasks\n");
+    printw("  todo help            - Show this help message\n\n");
+}
+
+void cmd_todo(const char *arg) {
+    // Initialize tasks if not already loaded
+    static bool tasks_loaded = false;
+    if (!tasks_loaded) {
+        load_tasks();
+        tasks_loaded = true;
+    }
+    
+    // Parse arguments
+    if (!arg || !*arg) {
+        // No arguments, show task list
+        todo_list();
+        return;
+    }
+    
+    // Split into command and arguments
+    char cmd_copy[MAX_CMD_LENGTH];
+    strncpy(cmd_copy, arg, sizeof(cmd_copy) - 1);
+    cmd_copy[sizeof(cmd_copy) - 1] = '\0';
+    
+    char *cmd_name = strtok(cmd_copy, " \t");
+    char *cmd_arg = strtok(NULL, "");
+    
+    if (cmd_arg) {
+        // Skip leading whitespace
+        while (*cmd_arg && isspace(*cmd_arg)) {
+            cmd_arg++;
+        }
+    }
+    
+    if (strcmp(cmd_name, "add") == 0) {
+        if (!cmd_arg || !*cmd_arg) {
+            log_error(error_console, ERROR_WARNING, "TODO", "Missing task description");
+            todo_help();
+            return;
+        }
+        todo_add(cmd_arg);
+    } else if (strcmp(cmd_name, "done") == 0) {
+        if (!cmd_arg || !*cmd_arg) {
+            log_error(error_console, ERROR_WARNING, "TODO", "Missing task ID");
+            todo_help();
+            return;
+        }
+        todo_done(atoi(cmd_arg));
+    } else if (strcmp(cmd_name, "remove") == 0) {
+        if (!cmd_arg || !*cmd_arg) {
+            log_error(error_console, ERROR_WARNING, "TODO", "Missing task ID");
+            todo_help();
+            return;
+        }
+        todo_remove(atoi(cmd_arg));
+    } else if (strcmp(cmd_name, "clear") == 0) {
+        todo_clear();
+    } else if (strcmp(cmd_name, "help") == 0) {
+        todo_help();
+    } else {
+        log_error(error_console, ERROR_WARNING, "TODO", "Unknown command: %s", cmd_name);
+        todo_help();
     }
 }
 
