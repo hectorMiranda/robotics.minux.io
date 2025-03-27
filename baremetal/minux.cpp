@@ -1,31 +1,38 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <unistd.h>
-#include <sys/wait.h>
-#include <ncurses.h>
-#include <dirent.h>
-#include <sys/stat.h>
-#include <errno.h>
-#include <panel.h>
-#include <ctype.h>  // For isspace()
-#include <termios.h> // For serial communication
-#include <fcntl.h>   // For file control
-#include <signal.h>  // For signal handling
-#include "error_console.h"
-#include <locale.h>
-#include <stddef.h>
 #include <iostream>
-#include <fstream>
-#include <string>
+#include <cstdio>
 #include <cstring>
-#include <pwd.h>    // For getpwuid
-#include <grp.h>    // For getgrgid
-#include <vector>
+#include <cstdlib>
+#include <ctime>
+#include <cctype>
 #include <algorithm>
-#include <functional> // For tree command
+#include <vector>
+#include <string>
+#include <functional>
+#include <pwd.h>
+#include <grp.h>
+#include <ncurses.h>
+#include <panel.h>
+#include <menu.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <fcntl.h>
+#include <errno.h>
+#include <time.h>
+#include <locale.h>
+#include <termios.h>
+#include <fstream>
+#include <sstream>
+#include <thread>
+#include <chrono>
 #include <math.h>    // For sin() in tone generation
+#include <signal.h>  // For signal handling
+#include <openssl/sha.h>  // For SHA-256 hashing
+#include <openssl/evp.h>  // For AES encryption
+#include <openssl/rand.h> // For secure random generation
+#include <secp256k1.h>    // For secp256k1 cryptography
+#include "error_console.h"
 
 // Define GPIO constants for systems without pigpio
 #define PI_INPUT 0
@@ -126,6 +133,14 @@ void todo_help(void);
 void load_tasks(void);
 void save_tasks(void);
 
+// Crypto command prototypes
+void cmd_crypto(const char *arg);
+void crypto_generate_keypair(void);
+void crypto_hash(const char *data);
+void crypto_encrypt(const char *data);
+void crypto_decrypt(const char *data);
+void crypto_show_help(void);
+
 // Function declarations that were missing
 void init_windows(void);
 void cleanup(void);
@@ -163,6 +178,7 @@ Command commands[] = {
     {"log", NULL, "Add entry to log file"},   // Special handling for args
     {"play", NULL, "Play audio files, notes or scales"}, // Add play command
     {"todo", NULL, "Task management (use 'todo help' for options)"}, // Add todo command
+    {"crypto", NULL, "Crypto operations"}, // Add crypto command
     {NULL, NULL, NULL}
 };
 
@@ -815,6 +831,17 @@ void handle_command(const char *cmd) {
         } else {
             // Default behavior is to list tasks
             todo_list();
+        }
+        show_prompt();
+    }
+    else if (strcmp(args[0], "crypto") == 0) {
+        if (argc > 1) {
+            // Get the original command string and extract everything after "crypto "
+            const char *crypto_arg = cmd + 7;
+            while (isspace(*crypto_arg)) crypto_arg++;
+            cmd_crypto(crypto_arg);
+        } else {
+            crypto_show_help();
         }
         show_prompt();
     }
@@ -3705,6 +3732,415 @@ void cmd_todo(const char *arg) {
         log_error(error_console, ERROR_WARNING, "TODO", "Unknown command: %s", cmd_name);
         todo_help();
     }
+}
+
+// Crypto command implementations
+void cmd_crypto(const char *arg) {
+    if (!arg || !*arg) {
+        log_error(error_console, ERROR_WARNING, "CRYPTO", "Usage: crypto <command>");
+        crypto_show_help();
+        return;
+    }
+    
+    // Parse arguments
+    char cmd_copy[MAX_CMD_LENGTH];
+    strncpy(cmd_copy, arg, sizeof(cmd_copy) - 1);
+    cmd_copy[sizeof(cmd_copy) - 1] = '\0';
+    
+    char *cmd_name = strtok(cmd_copy, " \t");
+    char *cmd_arg = strtok(NULL, "");
+    
+    if (cmd_arg) {
+        // Skip leading whitespace
+        while (*cmd_arg && isspace(*cmd_arg)) {
+            cmd_arg++;
+        }
+    }
+    
+    if (strcmp(cmd_name, "generate-keypair") == 0) {
+        crypto_generate_keypair();
+    } else if (strcmp(cmd_name, "hash") == 0) {
+        if (!cmd_arg || !*cmd_arg) {
+            log_error(error_console, ERROR_WARNING, "CRYPTO", "Missing data to hash");
+            return;
+        }
+        crypto_hash(cmd_arg);
+    } else if (strcmp(cmd_name, "encrypt") == 0) {
+        if (!cmd_arg || !*cmd_arg) {
+            log_error(error_console, ERROR_WARNING, "CRYPTO", "Missing data to encrypt");
+            return;
+        }
+        crypto_encrypt(cmd_arg);
+    } else if (strcmp(cmd_name, "decrypt") == 0) {
+        if (!cmd_arg || !*cmd_arg) {
+            log_error(error_console, ERROR_WARNING, "CRYPTO", "Missing data to decrypt");
+            return;
+        }
+        crypto_decrypt(cmd_arg);
+    } else {
+        log_error(error_console, ERROR_WARNING, "CRYPTO", "Unknown crypto command: %s", cmd_name);
+        crypto_show_help();
+    }
+}
+
+void crypto_generate_keypair(void) {
+    // Implement key generation logic
+    printw("\nGenerating real crypto key pair using secp256k1...\n");
+    refresh();
+    
+    // Use the actual secp256k1 library
+    secp256k1_context *ctx = secp256k1_context_create(SECP256K1_CONTEXT_SIGN | SECP256K1_CONTEXT_VERIFY);
+    if (!ctx) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to create secp256k1 context");
+        return;
+    }
+    
+    // Generate a random private key
+    unsigned char privkey[32];
+    FILE* urandom = fopen("/dev/urandom", "rb");
+    if (!urandom) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to open /dev/urandom");
+        secp256k1_context_destroy(ctx);
+        return;
+    }
+    
+    if (fread(privkey, sizeof(unsigned char), 32, urandom) != 32) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to read random data");
+        fclose(urandom);
+        secp256k1_context_destroy(ctx);
+        return;
+    }
+    fclose(urandom);
+    
+    // Verify the private key
+    if (!secp256k1_ec_seckey_verify(ctx, privkey)) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Invalid private key");
+        secp256k1_context_destroy(ctx);
+        return;
+    }
+    
+    // Create the public key from the private key
+    secp256k1_pubkey pubkey;
+    if (!secp256k1_ec_pubkey_create(ctx, &pubkey, privkey)) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to create public key");
+        secp256k1_context_destroy(ctx);
+        return;
+    }
+    
+    // Print private key
+    printw("Private Key: ");
+    for (size_t i = 0; i < 32; i++) {
+        printw("%02x", privkey[i]);
+    }
+    printw("\n");
+    
+    // Serialize the public key in compressed format
+    unsigned char output[33];
+    size_t outputlen = sizeof(output);
+    secp256k1_ec_pubkey_serialize(ctx, output, &outputlen, &pubkey, SECP256K1_EC_COMPRESSED);
+    
+    // Print public key
+    printw("Public Key: ");
+    for (size_t i = 0; i < outputlen; i++) {
+        printw("%02x", output[i]);
+    }
+    printw("\n");
+    refresh();
+    
+    // Clean up
+    secp256k1_context_destroy(ctx);
+    memset(privkey, 0, sizeof(privkey)); // Clear sensitive data
+}
+
+void crypto_hash(const char *data) {
+    printw("\nHashing data using SHA-256: %s\n", data);
+    refresh();
+    
+    // Use OpenSSL SHA-256 for real cryptographic hashing
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, data, strlen(data));
+    SHA256_Final(hash, &sha256);
+    
+    // Print the hash value in hexadecimal
+    printw("SHA-256 Hash: ");
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++) {
+        printw("%02x", hash[i]);
+    }
+    printw("\n");
+    refresh();
+}
+
+void crypto_encrypt(const char *data) {
+    printw("\nEncrypting data using AES-256: %s\n", data);
+    refresh();
+    
+    // Use AES-256 in CBC mode from OpenSSL
+    const EVP_CIPHER *cipher = EVP_aes_256_cbc();
+    const int block_size = EVP_CIPHER_block_size(cipher);
+    
+    // Generate a random key and IV
+    unsigned char key[32]; // AES-256 key size
+    unsigned char iv[16];  // AES block size for IV
+    
+    // Use secure random generator for key and IV
+    if (!RAND_bytes(key, sizeof(key)) || !RAND_bytes(iv, sizeof(iv))) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to generate secure random data");
+        return;
+    }
+    
+    // Calculate the output buffer size with padding
+    size_t data_len = strlen(data);
+    int out_len = data_len + block_size - (data_len % block_size);
+    unsigned char *encrypted = (unsigned char *)malloc(out_len);
+    if (!encrypted) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Memory allocation failed");
+        return;
+    }
+    
+    // Initialize encryption context
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to create cipher context");
+        free(encrypted);
+        return;
+    }
+    
+    // Initialize encryption operation
+    if (!EVP_EncryptInit_ex(ctx, cipher, NULL, key, iv)) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to initialize encryption");
+        EVP_CIPHER_CTX_free(ctx);
+        free(encrypted);
+        return;
+    }
+    
+    // Encrypt the data
+    int len = 0;
+    if (!EVP_EncryptUpdate(ctx, encrypted, &len, (const unsigned char *)data, data_len)) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed during encryption");
+        EVP_CIPHER_CTX_free(ctx);
+        free(encrypted);
+        return;
+    }
+    
+    int final_len = 0;
+    if (!EVP_EncryptFinal_ex(ctx, encrypted + len, &final_len)) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to finalize encryption");
+        EVP_CIPHER_CTX_free(ctx);
+        free(encrypted);
+        return;
+    }
+    
+    // Total length is len + final_len
+    len += final_len;
+    
+    // Print the key and IV as hex
+    printw("Key: ");
+    for (size_t i = 0; i < sizeof(key); i++) {
+        printw("%02x", key[i]);
+    }
+    printw("\n");
+    
+    printw("IV: ");
+    for (size_t i = 0; i < sizeof(iv); i++) {
+        printw("%02x", iv[i]);
+    }
+    printw("\n");
+    
+    // Print the encrypted data as hex
+    printw("Encrypted (hex): ");
+    for (int i = 0; i < len; i++) {
+        printw("%02x", encrypted[i]);
+    }
+    printw("\n");
+    
+    // Cleanup
+    EVP_CIPHER_CTX_free(ctx);
+    free(encrypted);
+    memset(key, 0, sizeof(key)); // Clear sensitive data
+    refresh();
+}
+
+void crypto_decrypt(const char *data) {
+    printw("\nDecrypting data using AES-256...\n");
+    refresh();
+    
+    // We need key, iv, and ciphertext to decrypt
+    printw("Please enter the encryption key (64 hex chars): ");
+    refresh();
+    
+    // Get key input
+    char key_hex[65];
+    char iv_hex[33];
+    int ch, pos = 0;
+    
+    // Clear input buffer
+    while ((ch = getch()) != '\n' && ch != EOF);
+    
+    // Read key
+    while (pos < 64 && (ch = getch()) != '\n' && ch != EOF) {
+        if (isxdigit(ch)) {
+            key_hex[pos++] = ch;
+            printw("%c", ch);
+            refresh();
+        } else if (ch == KEY_BACKSPACE || ch == 127) {
+            if (pos > 0) {
+                pos--;
+                printw("\b \b");
+                refresh();
+            }
+        }
+    }
+    key_hex[pos] = '\0';
+    printw("\n");
+    
+    if (pos != 64) {
+        log_error(error_console, ERROR_WARNING, "CRYPTO", 
+                 "Invalid key length. Must be 64 hex characters (32 bytes).");
+        return;
+    }
+    
+    // Get IV input
+    printw("Please enter the IV (32 hex chars): ");
+    refresh();
+    pos = 0;
+    
+    while (pos < 32 && (ch = getch()) != '\n' && ch != EOF) {
+        if (isxdigit(ch)) {
+            iv_hex[pos++] = ch;
+            printw("%c", ch);
+            refresh();
+        } else if (ch == KEY_BACKSPACE || ch == 127) {
+            if (pos > 0) {
+                pos--;
+                printw("\b \b");
+                refresh();
+            }
+        }
+    }
+    iv_hex[pos] = '\0';
+    printw("\n");
+    
+    if (pos != 32) {
+        log_error(error_console, ERROR_WARNING, "CRYPTO", 
+                 "Invalid IV length. Must be 32 hex characters (16 bytes).");
+        return;
+    }
+    
+    // Convert hex key to binary
+    unsigned char key[32];
+    for (int i = 0; i < 32; i++) {
+        sscanf(&key_hex[i*2], "%2hhx", &key[i]);
+    }
+    
+    // Convert hex IV to binary
+    unsigned char iv[16];
+    for (int i = 0; i < 16; i++) {
+        sscanf(&iv_hex[i*2], "%2hhx", &iv[i]);
+    }
+    
+    // Check if the ciphertext is valid hex
+    bool is_hex = true;
+    size_t data_len = strlen(data);
+    
+    for (size_t i = 0; i < data_len; i++) {
+        if (!isxdigit(data[i])) {
+            is_hex = false;
+            break;
+        }
+    }
+    
+    if (!is_hex || data_len % 2 != 0) {
+        log_error(error_console, ERROR_WARNING, "CRYPTO", 
+                 "Invalid data format for decryption. Expecting hex encoded data.");
+        return;
+    }
+    
+    // Convert hex ciphertext to binary
+    unsigned char *ciphertext = (unsigned char *)malloc(data_len / 2);
+    if (!ciphertext) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Memory allocation failed");
+        return;
+    }
+    
+    size_t ciphertext_len = 0;
+    for (size_t i = 0; i < data_len; i += 2) {
+        sscanf(&data[i], "%2hhx", &ciphertext[ciphertext_len++]);
+    }
+    
+    // Set up AES decryption
+    const EVP_CIPHER *cipher = EVP_aes_256_cbc();
+    EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+    if (!ctx) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to create cipher context");
+        free(ciphertext);
+        return;
+    }
+    
+    // Initialize decryption operation
+    if (!EVP_DecryptInit_ex(ctx, cipher, NULL, key, iv)) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed to initialize decryption");
+        EVP_CIPHER_CTX_free(ctx);
+        free(ciphertext);
+        return;
+    }
+    
+    // Allocate output buffer - it will be at most the size of the ciphertext
+    unsigned char *plaintext = (unsigned char *)malloc(ciphertext_len);
+    if (!plaintext) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Memory allocation failed");
+        EVP_CIPHER_CTX_free(ctx);
+        free(ciphertext);
+        return;
+    }
+    
+    // Decrypt the data
+    int len = 0;
+    if (!EVP_DecryptUpdate(ctx, plaintext, &len, ciphertext, ciphertext_len)) {
+        log_error(error_console, ERROR_CRITICAL, "CRYPTO", "Failed during decryption");
+        EVP_CIPHER_CTX_free(ctx);
+        free(ciphertext);
+        free(plaintext);
+        return;
+    }
+    
+    int final_len = 0;
+    if (!EVP_DecryptFinal_ex(ctx, plaintext + len, &final_len)) {
+        log_error(error_console, ERROR_WARNING, "CRYPTO", 
+                 "Failed to finalize decryption. Incorrect key, IV, or corrupted data.");
+        EVP_CIPHER_CTX_free(ctx);
+        free(ciphertext);
+        free(plaintext);
+        return;
+    }
+    
+    // Total length is len + final_len
+    len += final_len;
+    
+    // Null-terminate the plaintext (assuming it's text)
+    plaintext[len] = '\0';
+    
+    // Print the decrypted data
+    printw("Decrypted: %s\n", plaintext);
+    
+    // Cleanup
+    EVP_CIPHER_CTX_free(ctx);
+    free(ciphertext);
+    free(plaintext);
+    memset(key, 0, sizeof(key)); // Clear sensitive data
+    memset(iv, 0, sizeof(iv));   // Clear sensitive data
+    refresh();
+}
+
+void crypto_show_help(void) {
+    printw("\nCrypto Command Usage:\n");
+    printw("  crypto generate-keypair - Generate a new secp256k1 keypair\n");
+    printw("  crypto hash <data>     - Hash data using SHA-256\n");
+    printw("  crypto encrypt <data>  - Encrypt data using AES-256-CBC\n");
+    printw("  crypto decrypt <data>  - Decrypt data using AES-256-CBC\n\n");
+    printw("Note: These are real cryptographic implementations using\n");
+    printw("      secp256k1 and OpenSSL libraries.\n\n");
 }
 
 int main(void) {
