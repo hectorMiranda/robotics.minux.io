@@ -33,6 +33,10 @@
 #include <openssl/rand.h> // For secure random generation
 #include <secp256k1.h>    // For secp256k1 cryptography
 #include "error_console.h"
+#include <openssl/ec.h>
+#include <openssl/ecdsa.h>
+#include <openssl/obj_mac.h>
+#include <openssl/bn.h>
 
 // Define GPIO constants for systems without pigpio
 #define PI_INPUT 0
@@ -174,6 +178,7 @@ Command commands[] = {
     {"serial", serial_monitor, "Open serial monitor for device communication"},
     {"tree", cmd_tree, "Display directory structure in a tree-like format"},
     {"cat", NULL, "Display file contents"},   // Special handling for args
+    {"wallet", NULL, "Cryptocurrency wallet operations"}, // Special handling for args
     {"history", cmd_history, "Display command history"},  // Add history command
     {"log", NULL, "Add entry to log file"},   // Special handling for args
     {"play", NULL, "Play audio files, notes or scales"}, // Add play command
@@ -842,6 +847,22 @@ void handle_command(const char *cmd) {
             cmd_crypto(crypto_arg);
         } else {
             crypto_show_help();
+        }
+        show_prompt();
+    }
+    else if (strcmp(args[0], "cat") == 0) {
+        cmd_cat(argc > 1 ? args[1] : NULL);
+        show_prompt();
+    }
+    else if (strcmp(args[0], "wallet") == 0) {
+        // Pass all arguments as a single string for parsing in the wallet command
+        if (argc > 1) {
+            // Find the position after "wallet "
+            const char *wallet_args = cmd + strlen("wallet") + 1;
+            while (*wallet_args == ' ') wallet_args++; // Skip any extra spaces
+            cmd_wallet(wallet_args);
+        } else {
+            cmd_wallet(NULL); // No arguments, show help
         }
         show_prompt();
     }
@@ -4142,6 +4163,36 @@ void crypto_show_help(void) {
     printw("Note: These are real cryptographic implementations using\n");
     printw("      secp256k1 and OpenSSL libraries.\n\n");
 }
+
+// Add a wallet-related structure after the Task structure
+// Around line 3450
+typedef struct {
+    bool initialized;
+    unsigned char private_key[32];
+    unsigned char public_key[65]; // Uncompressed public key (0x04 + 32 bytes X + 32 bytes Y)
+    size_t public_key_length;
+} Wallet;
+
+// Global wallet instance
+Wallet current_wallet = {
+    false,              // initialized
+    {0},                // private_key (zeroed out)
+    {0},                // public_key (zeroed out)
+    0                   // public_key_length
+};
+
+// Function prototypes for wallet commands
+void cmd_wallet(const char *arg);
+void wallet_create(void);
+void wallet_import(const char *private_key_hex);
+void wallet_export(void);
+void wallet_sign(const char *message);
+void wallet_verify(const char *message, const char *signature_hex, const char *public_key_hex);
+void wallet_help(void);
+
+// Helper functions
+bool hex_to_bytes(const char *hex_string, unsigned char *byte_array, size_t byte_array_size);
+char *bytes_to_hex(const unsigned char *bytes, size_t len);
 
 int main(void) {
     // Set up locale and UTF-8 support BEFORE ncurses init
