@@ -112,6 +112,7 @@ void test_camera(void);
 void cmd_tree(void);
 void cmd_tree_interactive(void); // Add separate function for interactive mode
 void cmd_cat(const char *filepath); // Add cat command prototype
+void cmd_wallet(const char *arg); // Add this line here
 void cmd_history(void);
 void cmd_log(const char *message);
 void add_to_history(const char *cmd);
@@ -4193,6 +4194,375 @@ void wallet_help(void);
 // Helper functions
 bool hex_to_bytes(const char *hex_string, unsigned char *byte_array, size_t byte_array_size);
 char *bytes_to_hex(const unsigned char *bytes, size_t len);
+
+// Add this implementation after the other command implementations
+void cmd_wallet(const char *arg) {
+    if (!arg || strlen(arg) == 0) {
+        wallet_help();
+        return;
+    }
+    
+    // Parse the subcommand and arguments
+    char subcommand[32] = {0};
+    char args[1024] = {0};
+    
+    int parsed = sscanf(arg, "%31s %1023[^\n]", subcommand, args);
+    
+    if (parsed < 1) {
+        wallet_help();
+        return;
+    }
+    
+    if (strcmp(subcommand, "create") == 0) {
+        wallet_create();
+    }
+    else if (strcmp(subcommand, "import") == 0) {
+        wallet_import(parsed > 1 ? args : NULL);
+    }
+    else if (strcmp(subcommand, "export") == 0) {
+        wallet_export();
+    }
+    else if (strcmp(subcommand, "sign") == 0) {
+        wallet_sign(parsed > 1 ? args : NULL);
+    }
+    else if (strcmp(subcommand, "verify") == 0) {
+        // Parse message, signature, and public key from args
+        char message[512] = {0};
+        char signature[129] = {0};
+        char pubkey[131] = {0};
+        
+        int verify_parsed = sscanf(args, "%511s %128s %130s", message, signature, pubkey);
+        
+        if (verify_parsed == 3) {
+            wallet_verify(message, signature, pubkey);
+        } else {
+            printw("\nError: Missing parameters for verify command\n");
+            printw("Usage: wallet verify <message> <signature in hex> <public key in hex>\n\n");
+        }
+    }
+    else if (strcmp(subcommand, "help") == 0) {
+        wallet_help();
+    }
+    else {
+        printw("\nUnknown wallet subcommand: %s\n", subcommand);
+        wallet_help();
+    }
+    
+    refresh();
+}
+
+void wallet_help(void) {
+    printw("\nWallet Commands:\n");
+    printw("  wallet create                 - Generate a new wallet (keypair)\n");
+    printw("  wallet import <privkey>       - Import a wallet using a private key\n");
+    printw("  wallet export                 - Show public & private key of current wallet\n");
+    printw("  wallet sign <message>         - Sign a message with the wallet's private key\n");
+    printw("  wallet verify <message> <sig> <pubkey> - Verify a signed message\n\n");
+    refresh();
+}
+
+void wallet_create(void) {
+    EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
+    if (!key) {
+        printw("\nError: Failed to create key structure\n");
+        return;
+    }
+    
+    if (EC_KEY_generate_key(key) != 1) {
+        printw("\nError: Failed to generate keypair\n");
+        EC_KEY_free(key);
+        return;
+    }
+    
+    // Get private key
+    const BIGNUM *priv_key = EC_KEY_get0_private_key(key);
+    if (!priv_key) {
+        printw("\nError: Failed to get private key\n");
+        EC_KEY_free(key);
+        return;
+    }
+    
+    // Convert private key to binary
+    memset(current_wallet.private_key, 0, sizeof(current_wallet.private_key));
+    BN_bn2bin(priv_key, current_wallet.private_key + (32 - BN_num_bytes(priv_key)));
+    
+    // Get public key
+    const EC_POINT *pub_key = EC_KEY_get0_public_key(key);
+    if (!pub_key) {
+        printw("\nError: Failed to get public key\n");
+        EC_KEY_free(key);
+        return;
+    }
+    
+    // Convert public key to binary
+    current_wallet.public_key_length = EC_POINT_point2oct(
+        EC_KEY_get0_group(key), pub_key, POINT_CONVERSION_UNCOMPRESSED,
+        current_wallet.public_key, sizeof(current_wallet.public_key), NULL);
+    
+    if (current_wallet.public_key_length == 0) {
+        printw("\nError: Failed to convert public key\n");
+        EC_KEY_free(key);
+        return;
+    }
+    
+    current_wallet.initialized = true;
+    EC_KEY_free(key);
+    
+    printw("\nWallet created successfully!\n");
+    printw("Private key: %s\n", bytes_to_hex(current_wallet.private_key, 32));
+    printw("Public key: %s\n\n", bytes_to_hex(current_wallet.public_key, current_wallet.public_key_length));
+    refresh();
+}
+
+void wallet_import(const char *private_key_hex) {
+    if (!private_key_hex) {
+        printw("\nError: No private key provided\n");
+        printw("Usage: wallet import <private key in hex>\n\n");
+        return;
+    }
+    
+    if (!hex_to_bytes(private_key_hex, current_wallet.private_key, sizeof(current_wallet.private_key))) {
+        printw("\nError: Invalid private key format\n\n");
+        return;
+    }
+    
+    EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
+    if (!key) {
+        printw("\nError: Failed to create key structure\n\n");
+        return;
+    }
+    
+    BIGNUM *bn_priv_key = BN_bin2bn(current_wallet.private_key, 32, NULL);
+    if (!bn_priv_key || EC_KEY_set_private_key(key, bn_priv_key) != 1) {
+        printw("\nError: Failed to set private key\n\n");
+        if (bn_priv_key) BN_free(bn_priv_key);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    const EC_GROUP *group = EC_KEY_get0_group(key);
+    EC_POINT *pub_key = EC_POINT_new(group);
+    if (!pub_key) {
+        printw("\nError: Failed to create point\n\n");
+        BN_free(bn_priv_key);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    if (!EC_POINT_mul(group, pub_key, bn_priv_key, NULL, NULL, NULL)) {
+        printw("\nError: Failed to derive public key\n\n");
+        EC_POINT_free(pub_key);
+        BN_free(bn_priv_key);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    current_wallet.public_key_length = EC_POINT_point2oct(
+        group, pub_key, POINT_CONVERSION_UNCOMPRESSED,
+        current_wallet.public_key, sizeof(current_wallet.public_key), NULL);
+    
+    if (current_wallet.public_key_length == 0) {
+        printw("\nError: Failed to convert public key\n\n");
+        EC_POINT_free(pub_key);
+        BN_free(bn_priv_key);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    current_wallet.initialized = true;
+    
+    EC_POINT_free(pub_key);
+    BN_free(bn_priv_key);
+    EC_KEY_free(key);
+    
+    printw("\nWallet imported successfully!\n");
+    printw("Private key: %s\n", bytes_to_hex(current_wallet.private_key, 32));
+    printw("Public key: %s\n\n", bytes_to_hex(current_wallet.public_key, current_wallet.public_key_length));
+    refresh();
+}
+
+void wallet_export(void) {
+    if (!current_wallet.initialized) {
+        printw("\nError: No wallet initialized. Use 'wallet create' or 'wallet import' first.\n\n");
+        return;
+    }
+    
+    printw("\nWallet Export:\n");
+    printw("Private key: %s\n", bytes_to_hex(current_wallet.private_key, 32));
+    printw("Public key: %s\n\n", bytes_to_hex(current_wallet.public_key, current_wallet.public_key_length));
+    refresh();
+}
+
+void wallet_sign(const char *message) {
+    if (!current_wallet.initialized) {
+        printw("\nError: No wallet initialized. Use 'wallet create' or 'wallet import' first.\n\n");
+        return;
+    }
+    
+    if (!message || strlen(message) == 0) {
+        printw("\nError: No message provided\n");
+        printw("Usage: wallet sign <message>\n\n");
+        return;
+    }
+    
+    EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
+    if (!key) {
+        printw("\nError: Failed to create key structure\n\n");
+        return;
+    }
+    
+    BIGNUM *bn_priv_key = BN_bin2bn(current_wallet.private_key, 32, NULL);
+    if (!bn_priv_key || EC_KEY_set_private_key(key, bn_priv_key) != 1) {
+        printw("\nError: Failed to set private key\n\n");
+        if (bn_priv_key) BN_free(bn_priv_key);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, message, strlen(message));
+    SHA256_Final(hash, &sha256);
+    
+    ECDSA_SIG *signature = ECDSA_do_sign(hash, SHA256_DIGEST_LENGTH, key);
+    if (!signature) {
+        printw("\nError: Failed to sign message\n\n");
+        BN_free(bn_priv_key);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    const BIGNUM *r, *s;
+    ECDSA_SIG_get0(signature, &r, &s);
+    
+    unsigned char r_bin[32] = {0}, s_bin[32] = {0};
+    BN_bn2bin(r, r_bin + (32 - BN_num_bytes(r)));
+    BN_bn2bin(s, s_bin + (32 - BN_num_bytes(s)));
+    
+    unsigned char combined_sig[64];
+    memcpy(combined_sig, r_bin, 32);
+    memcpy(combined_sig + 32, s_bin, 32);
+    
+    printw("\nMessage: %s\n", message);
+    printw("Signature: %s\n\n", bytes_to_hex(combined_sig, 64));
+    
+    ECDSA_SIG_free(signature);
+    BN_free(bn_priv_key);
+    EC_KEY_free(key);
+    refresh();
+}
+
+void wallet_verify(const char *message, const char *signature_hex, const char *public_key_hex) {
+    if (!message || !signature_hex || !public_key_hex) {
+        printw("\nError: Missing parameters\n");
+        printw("Usage: wallet verify <message> <signature in hex> <public key in hex>\n\n");
+        return;
+    }
+    
+    unsigned char signature[64];
+    if (!hex_to_bytes(signature_hex, signature, sizeof(signature))) {
+        printw("\nError: Invalid signature format\n\n");
+        return;
+    }
+    
+    unsigned char public_key[65];
+    if (!hex_to_bytes(public_key_hex, public_key, sizeof(public_key))) {
+        printw("\nError: Invalid public key format\n\n");
+        return;
+    }
+    
+    EC_KEY *key = EC_KEY_new_by_curve_name(NID_secp256k1);
+    if (!key) {
+        printw("\nError: Failed to create key structure\n\n");
+        return;
+    }
+    
+    const EC_GROUP *group = EC_KEY_get0_group(key);
+    EC_POINT *pub_point = EC_POINT_new(group);
+    if (!pub_point) {
+        printw("\nError: Failed to create point\n\n");
+        EC_KEY_free(key);
+        return;
+    }
+    
+    if (!EC_POINT_oct2point(group, pub_point, public_key, 65, NULL) ||
+        EC_KEY_set_public_key(key, pub_point) != 1) {
+        printw("\nError: Failed to set public key\n\n");
+        EC_POINT_free(pub_point);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    unsigned char hash[SHA256_DIGEST_LENGTH];
+    SHA256_CTX sha256;
+    SHA256_Init(&sha256);
+    SHA256_Update(&sha256, message, strlen(message));
+    SHA256_Final(hash, &sha256);
+    
+    ECDSA_SIG *ecdsa_sig = ECDSA_SIG_new();
+    BIGNUM *r = BN_bin2bn(signature, 32, NULL);
+    BIGNUM *s = BN_bin2bn(signature + 32, 32, NULL);
+    
+    if (!r || !s || ECDSA_SIG_set0(ecdsa_sig, r, s) != 1) {
+        printw("\nError: Failed to set signature values\n\n");
+        if (r) BN_free(r);
+        if (s) BN_free(s);
+        ECDSA_SIG_free(ecdsa_sig);
+        EC_POINT_free(pub_point);
+        EC_KEY_free(key);
+        return;
+    }
+    
+    int verify_result = ECDSA_do_verify(hash, SHA256_DIGEST_LENGTH, ecdsa_sig, key);
+    
+    if (verify_result == 1) {
+        printw("\nValid Signature\n\n");
+    } else if (verify_result == 0) {
+        printw("\nInvalid Signature\n\n");
+    } else {
+        printw("\nVerification Error\n\n");
+    }
+    
+    ECDSA_SIG_free(ecdsa_sig);
+    EC_POINT_free(pub_point);
+    EC_KEY_free(key);
+    refresh();
+}
+
+// Add these implementations after the Wallet structure definition and before the wallet functions
+
+// Helper function to convert hex string to bytes
+bool hex_to_bytes(const char *hex_string, unsigned char *byte_array, size_t byte_array_size) {
+    size_t hex_len = strlen(hex_string);
+    if (hex_len % 2 != 0 || hex_len / 2 > byte_array_size) {
+        return false; // Invalid hex string length
+    }
+    
+    for (size_t i = 0; i < hex_len; i += 2) {
+        char byte_str[3] = {hex_string[i], hex_string[i+1], '\0'};
+        char *end_ptr;
+        byte_array[i/2] = (unsigned char)strtol(byte_str, &end_ptr, 16);
+        if (*end_ptr != '\0') {
+            return false; // Invalid hex character
+        }
+    }
+    return true;
+}
+
+// Helper function to convert bytes to hex string
+char *bytes_to_hex(const unsigned char *bytes, size_t len) {
+    static char hex_buffer[1024]; // Should be sufficient for our needs
+    if (len * 2 >= sizeof(hex_buffer)) {
+        return NULL; // Buffer too small
+    }
+    
+    for (size_t i = 0; i < len; i++) {
+        sprintf(hex_buffer + i * 2, "%02x", bytes[i]);
+    }
+    hex_buffer[len * 2] = '\0';
+    return hex_buffer;
+}
 
 int main(void) {
     // Set up locale and UTF-8 support BEFORE ncurses init
