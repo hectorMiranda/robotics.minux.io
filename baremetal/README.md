@@ -91,6 +91,12 @@ This command captures images using the Arducam camera and saves them in the `tes
    - Automatic cleanup on tab closure
    - Buffer size limits: MAX_ITEMS (1024), MAX_PATH (4096)
 
+4. **Cryptocurrency Wallet**
+   - Secp256k1-based key generation and management
+   - Message signing and verification
+   - Secure key import/export capabilities
+   - OpenSSL cryptographic operations
+
 ### Key Features
 
 1. **File Operations**
@@ -136,7 +142,7 @@ This command captures images using the Arducam camera and saves them in the `tes
 ### Installation on Ubuntu/Debian
 ```bash
 sudo apt-get update
-sudo apt-get install libncurses5-dev libncursesw5-dev
+sudo apt-get install libncurses5-dev libncursesw5-dev libssl-dev
 ```
 
 ### Installation on Raspberry Pi
@@ -148,6 +154,15 @@ sudo apt-get install libncurses5-dev libncursesw5-dev
 ### Compilation
 ```bash
 make
+```
+
+Additional dependencies for wallet functionality:
+- OpenSSL development libraries
+- Secp256k1 support
+
+Install on Ubuntu/Debian:
+```bash
+sudo apt-get install libssl-dev
 ```
 
 ## Technical Usage
@@ -307,6 +322,39 @@ The Windows 95-style status bar provides:
 - Error count indicator
 - Quick access to error console
 
+### Wallet Commands
+
+The `minux` shell includes a built-in cryptocurrency wallet with the following commands:
+
+1. **Create Wallet**
+   ```bash
+   wallet create
+   ```
+   Generates a new secp256k1 keypair and displays the public and private keys.
+
+2. **Import Wallet**
+   ```bash
+   wallet import <private_key>
+   ```
+   Imports a wallet using an existing private key in hex format.
+
+3. **Export Wallet**
+   ```bash
+   wallet export
+   ```
+   Displays the current wallet's public and private keys.
+
+4. **Sign Message**
+   ```bash
+   wallet sign <message>
+   ```
+   Signs a message using the wallet's private key and displays the signature.
+
+5. **Verify Signature**
+   ```bash
+   wallet verify <message> <signature> <public_key>
+   ```
+   Verifies a message signature against a public key.
 
 ## Camera Functionality
 
