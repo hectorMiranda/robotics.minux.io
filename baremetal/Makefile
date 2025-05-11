@@ -4,6 +4,13 @@ CXXFLAGS = -Wall -Wextra -g -I. -std=c++11
 UNAME_S := $(shell uname -s)
 ifeq ($(UNAME_S),Linux)
     LDFLAGS = -lncurses -lmenu -lpanel -lpthread -lrt -lsecp256k1 -lcrypto
+else ifeq ($(UNAME_S),Darwin)
+    # macOS specific settings
+    OPENSSL_PREFIX = $(shell brew --prefix openssl@3)
+    SECP256K1_PREFIX = $(shell brew --prefix secp256k1)
+    NCURSES_PREFIX = $(shell brew --prefix ncurses)
+    CXXFLAGS += -I$(OPENSSL_PREFIX)/include -I$(SECP256K1_PREFIX)/include -I$(NCURSES_PREFIX)/include
+    LDFLAGS = -L$(OPENSSL_PREFIX)/lib -L$(SECP256K1_PREFIX)/lib -L$(NCURSES_PREFIX)/lib -lncurses -lmenu -lpanel -lpthread -lsecp256k1 -lcrypto
 else
     LDFLAGS = -lncurses -lmenu -lpanel -lpthread -lrt -lsecp256k1 -lcrypto
 endif

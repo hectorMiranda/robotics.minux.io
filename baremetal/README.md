@@ -165,6 +165,12 @@ Install on Ubuntu/Debian:
 sudo apt-get install libssl-dev
 ```
 
+Mac:
+```bash
+brew install openssl
+brew install secp256k1
+```
+
 ## Technical Usage
 
 ### Keyboard Shortcuts
