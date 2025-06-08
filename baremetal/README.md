@@ -169,6 +169,7 @@ Mac:
 ```bash
 brew install openssl
 brew install secp256k1
+brew install ncurses
 ```
 
 ## Technical Usage
