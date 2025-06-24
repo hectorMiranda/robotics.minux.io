@@ -146,45 +146,77 @@ def print_summary(results):
     print("====================================================\n")
 
 def print_installation_recommendations(results):
-    print("\n🔧 INSTALLATION RECOMMENDATIONS:")
-    print("=" * 50)
+    recommendations_shown = False
     
-    if not results['nvcc'] or not results['CUDA Toolkit dir']:
+    # Check if NVIDIA driver is missing
+    if not results.get('nvidia-smi', False):
+        if not recommendations_shown:
+            print("\n🔧 Issues:")
+            print("=" * 50)
+            recommendations_shown = True
+        print("\n� NVIDIA Driver:")
+        print("   sudo apt update")
+        print("   sudo apt install nvidia-driver-535")
+        print("   sudo reboot")
+    
+    # Check if CUDA Toolkit is completely missing
+    if not results.get('CUDA Toolkit dir', False) and not results.get('CUDA Libraries', False):
+        if not recommendations_shown:
+            print("\n� INSTALLATION RECOMMENDATIONS:")
+            print("=" * 50)
+            recommendations_shown = True
         print("\n📦 CUDA Toolkit:")
         print("   Option 1 (Recommended): Install via conda")
         print("   conda install nvidia/label/cuda-12.9.0::cuda-toolkit")
         print("   ")
         print("   Option 2: Download from NVIDIA")
-        print("   https://developer.nvidia.com/cuda-downloads")
-        print("   Select: Linux > x86_64 > Ubuntu > 22.04 > deb (network)")
+        print("   wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb")
+        print("   sudo dpkg -i cuda-keyring_1.1-1_all.deb")
+        print("   sudo apt-get update")
+        print("   sudo apt-get -y install cuda-toolkit-12-9")
+        print("   ")
+        print("   # Add to PATH (add to ~/.bashrc or ~/.zshrc)")
+        print("   export PATH=/usr/local/cuda-12.9/bin${PATH:+:${PATH}}")
+        print("   export LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}")
     
-    if results['PyTorch CUDA'] is None:
+    # Check if nvcc is missing but CUDA is installed (PATH issue)
+    elif not results.get('nvcc', False) and (results.get('CUDA Toolkit dir', False) or results.get('CUDA Libraries', False)):
+        if not recommendations_shown:
+            print("\n🔧 INSTALLATION RECOMMENDATIONS:")
+            print("=" * 50)
+            recommendations_shown = True
+        print("\n🔧 CUDA PATH Configuration:")
+        print("   CUDA is installed but nvcc not in PATH. Add to ~/.bashrc or ~/.zshrc:")
+        print("   export PATH=/usr/local/cuda/bin:$PATH")
+        print("   export LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH")
+        print("   ")
+        print("   Then run: source ~/.bashrc  (or source ~/.zshrc)")
+    
+    # Check if PyTorch is missing
+    if results.get('PyTorch CUDA') is None:
+        if not recommendations_shown:
+            print("\n🔧 INSTALLATION RECOMMENDATIONS:")
+            print("=" * 50)
+            recommendations_shown = True
         print("\n🔥 PyTorch with CUDA:")
         print("   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121")
         print("   Or with conda: conda install pytorch torchvision torchaudio pytorch-cuda=12.1 -c pytorch -c nvidia")
     
-    if results['TensorFlow CUDA'] is None:
+    # Check if TensorFlow is missing
+    if results.get('TensorFlow CUDA') is None:
+        if not recommendations_shown:
+            print("\n🔧 Pending items:")
+            print("=" * 50)
+            recommendations_shown = True
         print("\n🧠 TensorFlow with CUDA:")
         print("   pip install tensorflow[and-cuda]")
         print("   Or: pip install tensorflow")
     
-    print("\n💡 Quick setup commands:")
-    print("   # Install CUDA Toolkit")
-    print("   wget https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb")
-    print("   sudo dpkg -i cuda-keyring_1.1-1_all.deb")
-    print("   sudo apt-get update")
-    print("   sudo apt-get -y install cuda-toolkit-12-9")
-    print("   ")
-    print("   # Add to PATH (add to ~/.bashrc or ~/.zshrc)")
-    print("   export PATH=/usr/local/cuda-12.9/bin${PATH:+:${PATH}}")
-    print("   export LD_LIBRARY_PATH=/usr/local/cuda-12.9/lib64${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}")
-    print("   ")
-    print("   # Install Python packages")
-    print("   pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121")
-    print("   pip install tensorflow[and-cuda]")
-    
-    print("\n🔄 After installation, restart terminal and run this script again!")
-    print("=" * 50)
+    if recommendations_shown:
+        print("\n Install pending items!")
+        print("=" * 50)
+    else:
+        print("\n🎉 All CUDA components are working properly! No installation needed.")
 
 if __name__ == "__main__":
     results = {}
