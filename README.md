@@ -1,52 +1,67 @@
-Robotics:
-========
+# Robotics
 
-This repository contains the code, documentation, and resources for multiple robotics projects
+This repository contains the code, documentation, and resources for multiple robotics projects developed at Minux.
 
+## Projects
 
-## Digital Clock Circuit with 7-Segment Display
+### Marcebot
 
-![Banner](images/clock.jpg)
-![Banner](images/schematics.jpg)
+The Marcebot is a small, autonomous robot designed for navigation and object avoidance. It uses a differential drive system with two stepper motors and an ultrasonic sensor for obstacle detection. The robot's behavior is controlled by an Arduino Nano, which runs a program that implements three modes: collision avoidance, dead reckoning, and path planning.
 
+- **Collision Avoidance Mode**: The robot moves forward and uses the ultrasonic sensor to detect obstacles. When an obstacle is detected, the robot stops, moves backward, and turns to avoid the obstacle.
+- **Dead Reckoning Mode**: The robot follows a predefined path of forward movements and turns.
+- **Path Planning Mode**: The robot navigates a path while avoiding obstacles.
 
-This schematic illustrates a microcontroller-based digital clock circuit. The system features:
+The `marcebot` directory contains the Arduino code for the robot, including the main `.ino` file and the `Robot` class, which provides an API for controlling the robot's movements.
 
-Microcontroller: ATmega328P, the heart of the design, controls timekeeping and display logic.
+### Digital Clock
 
-Display Interface: Two sets of 74LS138N decoders and 74LS47 BCD-to-7-segment drivers are used to control four 7-segment displays (two for hours, two for minutes).
+This project is a digital clock with an alarm function, built using an ATmega328P microcontroller and a 7-segment display. The clock displays the time in 12-hour format and includes a PM indicator. The user can set the time and alarm using pushbuttons. When the alarm is triggered, it plays a Pac-Man-themed melody.
 
-User Input: Momentary pushbuttons (SW1–SW4) allow for manual time setting (e.g., hours, minutes, mode selection).
+The `clock` directory contains the Arduino code for the clock, including the main `.ino` file and the logic for the alarm and display.
 
-Power Supply: AC to DC conversion is handled by a bridge rectifier (D1), followed by voltage regulation using a 7805 regulator to supply +5V DC.
+### Baremetal Minux
 
-Timing Circuit: A 16 MHz crystal oscillator ensures accurate timekeeping for the ATmega328P.
+This project is a lightweight, ncurses-based file explorer with multi-tab support and modern features, designed for minimal resource usage and maximum efficiency. It also includes a cryptocurrency wallet and camera functionality.
 
-Additional Features:
+The `baremetal` directory contains the source code for the file explorer, including the main `minux.cpp` file, the `explorer.cpp` file, and the `error_console.cpp` file, which implements a DOOM-style error console.
 
-Capacitor bank for power stabilization
+### CUDA Status Checker
 
-ISP header for in-circuit programming
+This project is a Python script that checks the status of the CUDA installation on a system. It verifies the NVIDIA driver, CUDA Toolkit, and CUDA runtime libraries, and it also checks for PyTorch and TensorFlow CUDA support.
 
-PMOS/NPN pair for switching logic or additional outputs
+The `cuda` directory contains the `cuda_status.py` script.
 
-Dual LED indicators and protection diodes
+### Ducky Board
 
+This project is a custom-designed breakout board for the ESP32-S3 chip, created using KiCad 9. The board features native USB-C programming support and includes an integrated Li-Ion battery charger.
 
-## PCC MIT-101
-This project aims to create an advanced robotics platform that integrates various sensors, AI APIs for object identification, and autonomous navigation capabilities to deliver small cargo efficiently.
+The `kicad` directory contains the KiCad design files for the board, including the schematics, PCB layout, and Gerber files.
 
-This repo contains the produced solid works file and the arduino code use during the PCC semester, new changes will be published here.
+### ESP32-S3 Camera
 
-![Banner](images/02.jpg)
+This project is a simple web server that streams video from an ESP32-S3 camera module. The server provides a web page with an MJPEG stream from the camera.
 
-![Banner](images/marcebot1_01.JPG)
-![Robot](images/4.jpg)
-![IMG_4439](images/IMG_4439.jpeg)
-![IMG_4461](images/IMG_4461.jpeg)
-![IMG_4650](images/IMG_4650.jpeg)
-![IMG_4725](images/IMG_4725.jpeg)
-![IMG_4811](images/IMG_4811.jpeg)
-![IMG_4854](images/IMG_4854.jpeg)
+The `esp32-s3-cam` directory contains the C++ code for the camera server.
 
-[![View PDF](images/m1.jpg)](images/m1.pdf)
+### Galileo
+
+This project contains a collection of Arduino and Python scripts for the Intel Galileo board. The Arduino scripts include examples for creating a web server, an interactive web server, and a Wi-Fi web server with Telnet. The Python scripts include examples for controlling motors and reading from sensors.
+
+The `galileo` directory contains the Arduino and Python scripts.
+
+### GoPiGo
+
+This project is a Python library for controlling the GoPiGo robot. The library provides a simple API for controlling the robot's motors, reading from sensors, and controlling the LEDs.
+
+The `raspberrypi/src` directory contains the `gopigo.py` library.
+
+### SolidWorks
+
+This project contains the SolidWorks assembly files for the MIT-101 project.
+
+The `solidworks` directory contains the SolidWorks files.
+
+## License
+
+This project is licensed under the MIT License. See the `LICENSE` file for details.
