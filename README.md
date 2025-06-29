@@ -1,7 +1,3 @@
-# Robotics
-
-This repository contains the code, documentation, and resources for multiple robotics projects developed at Minux.
-
 ## Projects
 
 ### Marcebot
@@ -12,13 +8,13 @@ The Marcebot is a small, autonomous robot designed for navigation and object avo
 - **Dead Reckoning Mode**: The robot follows a predefined path of forward movements and turns.
 - **Path Planning Mode**: The robot navigates a path while avoiding obstacles.
 
-The `marcebot` directory contains the Arduino code for the robot, including the main `.ino` file and the `Robot` class, which provides an API for controlling the robot's movements.
+The `arduino/marcebot` directory contains the Arduino code for the robot, including the main `.ino` file and the `Robot` class, which provides an API for controlling the robot's movements.
 
 ### Digital Clock
 
 This project is a digital clock with an alarm function, built using an ATmega328P microcontroller and a 7-segment display. The clock displays the time in 12-hour format and includes a PM indicator. The user can set the time and alarm using pushbuttons. When the alarm is triggered, it plays a Pac-Man-themed melody.
 
-The `clock` directory contains the Arduino code for the clock, including the main `.ino` file and the logic for the alarm and display.
+The `arduino/clock` directory contains the Arduino code for the clock, including the main `.ino` file and the logic for the alarm and display.
 
 ### Baremetal Minux
 
@@ -31,12 +27,6 @@ The `baremetal` directory contains the source code for the file explorer, includ
 This project is a Python script that checks the status of the CUDA installation on a system. It verifies the NVIDIA driver, CUDA Toolkit, and CUDA runtime libraries, and it also checks for PyTorch and TensorFlow CUDA support.
 
 The `cuda` directory contains the `cuda_status.py` script.
-
-### Ducky Board
-
-This project is a custom-designed breakout board for the ESP32-S3 chip, created using KiCad 9. The board features native USB-C programming support and includes an integrated Li-Ion battery charger.
-
-The `kicad` directory contains the KiCad design files for the board, including the schematics, PCB layout, and Gerber files.
 
 ### ESP32-S3 Camera
 
