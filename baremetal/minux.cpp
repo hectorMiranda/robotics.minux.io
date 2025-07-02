@@ -99,7 +99,7 @@ static void cleanup_serial(void);
 // Command function prototypes
 void cmd_help(void);
 void cmd_version(void);
-void cmd_cuda(void)
+void cmd_cuda(void);
 void cmd_time(void);
 void cmd_date(void);
 void cmd_path(void);
@@ -359,6 +359,268 @@ void cmd_help(void) {
 void cmd_version(void) {
     printw("\nMINUX Version %s\n\n", VERSION);
     refresh();
+}
+
+void cmd_cuda(void) {
+    printw("\nCUDA Testing Interface\n");
+    printw("=====================\n\n");
+    
+    // Check if nvidia-smi is available
+    printw("1. Checking NVIDIA GPU presence...\n");
+    refresh();
+    
+    FILE *pipe = popen("nvidia-smi --query-gpu=name,memory.total,memory.used,temperature.gpu --format=csv,noheader,nounits 2>/dev/null", "r");
+    if (pipe) {
+        char buffer[1024];
+        bool gpu_found = false;
+        
+        while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+            gpu_found = true;
+            // Remove trailing newline
+            buffer[strcspn(buffer, "\n")] = 0;
+            
+            // Parse CSV output: name, total_mem, used_mem, temp
+            char *name = strtok(buffer, ",");
+            char *total_mem = strtok(NULL, ",");
+            char *used_mem = strtok(NULL, ",");
+            char *temp = strtok(NULL, ",");
+            
+            if (name && total_mem && used_mem && temp) {
+                // Trim whitespace
+                while (*name == ' ') name++;
+                while (*total_mem == ' ') total_mem++;
+                while (*used_mem == ' ') used_mem++;
+                while (*temp == ' ') temp++;
+                
+                printw("   GPU Found: %s\n", name);
+                printw("   Memory: %s MB used / %s MB total\n", used_mem, total_mem);
+                printw("   Temperature: %s°C\n", temp);
+            }
+        }
+        pclose(pipe);
+        
+        if (!gpu_found) {
+            printw("   No NVIDIA GPUs detected\n");
+        }
+    } else {
+        printw("   nvidia-smi not found - CUDA may not be installed\n");
+    }
+    
+    printw("\n2. Checking CUDA installation...\n");
+    refresh();
+    
+    // Check CUDA compiler
+    pipe = popen("nvcc --version 2>/dev/null | grep 'release'", "r");
+    if (pipe) {
+        char buffer[256];
+        if (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+            buffer[strcspn(buffer, "\n")] = 0;
+            printw("   CUDA Compiler: %s\n", buffer);
+        } else {
+            printw("   CUDA compiler (nvcc) not found\n");
+        }
+        pclose(pipe);
+    }
+    
+    // Check CUDA runtime
+    pipe = popen("ldconfig -p 2>/dev/null | grep cuda | head -3", "r");
+    if (pipe) {
+        char buffer[256];
+        bool cuda_libs_found = false;
+        printw("   CUDA Libraries:\n");
+        
+        while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+            cuda_libs_found = true;
+            buffer[strcspn(buffer, "\n")] = 0;
+            // Extract library name
+            char *lib_start = strstr(buffer, "lib");
+            if (lib_start) {
+                char *lib_end = strstr(lib_start, ".so");
+                if (lib_end) {
+                    lib_end += 3; // Include ".so"
+                    *lib_end = '\0';
+                    printw("     - %s\n", lib_start);
+                }
+            }
+        }
+        
+        if (!cuda_libs_found) {
+            printw("     No CUDA libraries found in system\n");
+        }
+        pclose(pipe);
+    }
+    
+    printw("\n3. Running basic CUDA device query...\n");
+    refresh();
+    
+    // Create a simple CUDA test program
+    const char *cuda_test_code = R"(
+#include <cuda_runtime.h>
+#include <stdio.h>
+
+int main() {
+    int deviceCount;
+    cudaError_t error = cudaGetDeviceCount(&deviceCount);
+    
+    if (error != cudaSuccess) {
+        printf("CUDA Error: %s\n", cudaGetErrorString(error));
+        return 1;
+    }
+    
+    printf("CUDA Devices: %d\n", deviceCount);
+    
+    for (int i = 0; i < deviceCount; i++) {
+        cudaDeviceProp prop;
+        cudaGetDeviceProperties(&prop, i);
+        
+        printf("Device %d: %s\n", i, prop.name);
+        printf("  Compute Capability: %d.%d\n", prop.major, prop.minor);
+        printf("  Global Memory: %.2f MB\n", prop.totalGlobalMem / (1024.0 * 1024.0));
+        printf("  Multiprocessors: %d\n", prop.multiProcessorCount);
+        printf("  Max Threads per Block: %d\n", prop.maxThreadsPerBlock);
+    }
+    
+    return 0;
+}
+)";
+    
+    // Write test program to temporary file
+    FILE *test_file = fopen("/tmp/cuda_test.cu", "w");
+    if (test_file) {
+        fprintf(test_file, "%s", cuda_test_code);
+        fclose(test_file);
+        
+        // Try to compile and run
+        int compile_result = system("cd /tmp && nvcc cuda_test.cu -o cuda_test 2>/dev/null");
+        if (compile_result == 0) {
+            printw("   CUDA compilation successful\n");
+            
+            pipe = popen("/tmp/cuda_test 2>&1", "r");
+            if (pipe) {
+                char buffer[256];
+                while (fgets(buffer, sizeof(buffer), pipe) != NULL) {
+                    buffer[strcspn(buffer, "\n")] = 0;
+                    printw("   %s\n", buffer);
+                }
+                pclose(pipe);
+            }
+            
+            // Clean up
+            system("rm -f /tmp/cuda_test /tmp/cuda_test.cu");
+        } else {
+            printw("   CUDA compilation failed - CUDA development tools not available\n");
+            system("rm -f /tmp/cuda_test.cu");
+        }
+    } else {
+        printw("   Could not create test file\n");
+    }
+    
+    printw("\n4. Performance test options:\n");
+    printw("   - Matrix multiplication test\n");
+    printw("   - Memory bandwidth test\n");
+    printw("   - Compute throughput test\n");
+    printw("\nPress 'm' for matrix test, 'b' for bandwidth test, 'c' for compute test, or any other key to continue...\n\n");
+    refresh();
+    
+    int ch = getch();
+    if (ch == 'm' || ch == 'M') {
+        printw("Running matrix multiplication test...\n");
+        // Simple matrix multiplication performance test
+        const char *matrix_test = R"(
+#include <cuda_runtime.h>
+#include <stdio.h>
+#include <sys/time.h>
+
+#define N 1024
+
+__global__ void matmul(float *A, float *B, float *C, int n) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (row < n && col < n) {
+        float sum = 0.0f;
+        for (int k = 0; k < n; k++) {
+            sum += A[row * n + k] * B[k * n + col];
+        }
+        C[row * n + col] = sum;
+    }
+}
+
+int main() {
+    float *h_A, *h_B, *h_C;
+    float *d_A, *d_B, *d_C;
+    size_t size = N * N * sizeof(float);
+    
+    // Allocate host memory
+    h_A = (float*)malloc(size);
+    h_B = (float*)malloc(size);
+    h_C = (float*)malloc(size);
+    
+    // Initialize matrices
+    for (int i = 0; i < N * N; i++) {
+        h_A[i] = 1.0f;
+        h_B[i] = 2.0f;
+    }
+    
+    // Allocate device memory
+    cudaMalloc(&d_A, size);
+    cudaMalloc(&d_B, size);
+    cudaMalloc(&d_C, size);
+    
+    // Copy to device
+    struct timeval start, end;
+    gettimeofday(&start, NULL);
+    
+    cudaMemcpy(d_A, h_A, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, size, cudaMemcpyHostToDevice);
+    
+    // Launch kernel
+    dim3 threadsPerBlock(16, 16);
+    dim3 numBlocks((N + threadsPerBlock.x - 1) / threadsPerBlock.x,
+                   (N + threadsPerBlock.y - 1) / threadsPerBlock.y);
+    
+    matmul<<<numBlocks, threadsPerBlock>>>(d_A, d_B, d_C, N);
+    cudaDeviceSynchronize();
+    
+    // Copy result back
+    cudaMemcpy(h_C, d_C, size, cudaMemcpyDeviceToHost);
+    
+    gettimeofday(&end, NULL);
+    double time_taken = (end.tv_sec - start.tv_sec) + (end.tv_usec - start.tv_usec) / 1000000.0;
+    
+    printf("Matrix %dx%d multiplication completed in %.3f seconds\n", N, N, time_taken);
+    printf("Performance: %.2f GFLOPS\n", (2.0 * N * N * N) / (time_taken * 1e9));
+    
+    // Cleanup
+    free(h_A); free(h_B); free(h_C);
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    
+    return 0;
+}
+)";
+        
+        FILE *matrix_file = fopen("/tmp/cuda_matrix.cu", "w");
+        if (matrix_file) {
+            fprintf(matrix_file, "%s", matrix_test);
+            fclose(matrix_file);
+            
+            int result = system("cd /tmp && nvcc cuda_matrix.cu -o cuda_matrix 2>/dev/null && timeout 10s ./cuda_matrix");
+            if (result != 0) {
+                printw("Matrix test failed or timed out\n");
+            }
+            system("rm -f /tmp/cuda_matrix /tmp/cuda_matrix.cu");
+        }
+    } else if (ch == 'b' || ch == 'B') {
+        printw("Running memory bandwidth test...\n");
+        system("cd /tmp && echo 'Memory bandwidth test would measure GPU memory throughput' && sleep 1");
+    } else if (ch == 'c' || ch == 'C') {
+        printw("Running compute throughput test...\n");
+        system("cd /tmp && echo 'Compute test would measure GPU computational performance' && sleep 1");
+    }
+    
+    printw("\nCUDA testing complete. Press any key to continue...\n");
+    refresh();
+    getch();
 }
 
 void cmd_time(void) {
