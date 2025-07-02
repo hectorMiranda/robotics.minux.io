@@ -99,6 +99,7 @@ static void cleanup_serial(void);
 // Command function prototypes
 void cmd_help(void);
 void cmd_version(void);
+void cmd_cuda(void)
 void cmd_time(void);
 void cmd_date(void);
 void cmd_path(void);
