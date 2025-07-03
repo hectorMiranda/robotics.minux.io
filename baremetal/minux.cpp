@@ -16,6 +16,7 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <dirent.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -1134,6 +1135,7 @@ void handle_command(const char *cmd) {
         // Look for command in command table
         Command *best_match = NULL;
         int min_distance = MAX_CMD_LENGTH;
+        bool found_in_table = false;
         
         for (Command *cmd_entry = commands; cmd_entry->name != NULL; cmd_entry++) {
             if (strcmp(args[0], cmd_entry->name) == 0) {
@@ -1142,6 +1144,7 @@ void handle_command(const char *cmd) {
                     show_prompt();
                     return;
                 }
+                found_in_table = true;
             }
             // Find closest match for typos
             int dist = levenshtein_distance(args[0], cmd_entry->name);
@@ -1151,7 +1154,41 @@ void handle_command(const char *cmd) {
             }
         }
         
-        if (best_match) {
+        // If command not found in our table, try to execute it through the shell
+        if (!found_in_table) {
+            // Temporarily exit ncurses mode to run external command
+            endwin();
+            
+            // Execute the command through the shell
+            int result = system(cmd);
+            
+            // Re-initialize ncurses
+            initscr();
+            cbreak();
+            noecho();
+            keypad(stdscr, TRUE);
+            
+            // Re-initialize colors if they were set up
+            if (has_colors()) {
+                start_color();
+                init_pair(1, COLOR_BLUE, COLOR_BLACK);    // Directories
+                init_pair(2, COLOR_GREEN, COLOR_BLACK);   // Executables
+                init_pair(3, COLOR_CYAN, COLOR_BLACK);    // Symlinks
+                init_pair(4, COLOR_YELLOW, COLOR_BLACK);  // Status bar
+                init_pair(5, COLOR_RED, COLOR_BLACK);     // Errors
+                init_pair(6, COLOR_MAGENTA, COLOR_BLACK); // Special files
+            }
+            
+            // Redraw the screen
+            clear();
+            refresh();
+            
+            // Log the result if the command failed
+            if (result != 0) {
+                log_error(error_console, ERROR_WARNING, "SHELL", 
+                         "Command '%s' exited with status %d", args[0], WEXITSTATUS(result));
+            }
+        } else if (best_match) {
             log_error(error_console, ERROR_WARNING, "MINUX", 
                      "Unknown command '%s'. Did you mean '%s'?", args[0], best_match->name);
         } else {
