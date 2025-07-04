@@ -112,9 +112,9 @@ void launch_explorer(void);
 void capture_image(const char *filename);
 void test_camera(void);
 void cmd_tree(void);
-void cmd_tree_interactive(void); // Add separate function for interactive mode
-void cmd_cat(const char *filepath); // Add cat command prototype
-void cmd_wallet(const char *arg); // Add this line here
+void cmd_tree_interactive(void);
+void cmd_cat(const char *filepath);
+void cmd_wallet(const char *arg); 
 void cmd_history(void);
 void cmd_log(const char *message);
 void add_to_history(const char *cmd);
@@ -122,14 +122,13 @@ void load_history(void);
 void save_history(void);
 char *get_history_entry(int index);
 int history_size();
-void cmd_play(const char *arg); // Add play command prototype
+void cmd_play(const char *arg);
 void play_audio_file(const char *filepath);
 void play_tone(int frequency, int duration_ms);
 void play_note(const char *note, int duration_ms);
 void play_scale(const char *scale_name);
 double get_note_frequency(const char *note);
 
-// Todo App function prototypes
 void cmd_todo(const char *arg);
 void todo_add(const char *description);
 void todo_list(void);
@@ -140,7 +139,6 @@ void todo_help(void);
 void load_tasks(void);
 void save_tasks(void);
 
-// Crypto command prototypes
 void cmd_crypto(const char *arg);
 void crypto_generate_keypair(void);
 void crypto_hash(const char *data);
@@ -148,7 +146,6 @@ void crypto_encrypt(const char *data);
 void crypto_decrypt(const char *data);
 void crypto_show_help(void);
 
-// Function declarations that were missing
 void init_windows(void);
 void cleanup(void);
 void draw_status_bar(void);
@@ -190,7 +187,6 @@ Command commands[] = {
     {NULL, NULL, NULL}
 };
 
-// Global variables
 char current_path[MAX_PATH];
 ErrorConsole *error_console = NULL;
 WINDOW *status_bar;
@@ -204,7 +200,6 @@ SerialPort serial_port = {
     .is_connected = 0
 };
 
-// Add these global variables with other globals
 char *command_history[MAX_HISTORY];
 int history_count = 0;
 int history_position = -1;
@@ -259,7 +254,7 @@ void display_welcome_banner() {
     std::cout << "██║ ╚═╝ ██║██║██║ ╚████║╚██████╔╝██╔╝ ██╗\n";
     std::cout << "╚═╝     ╚═╝╚═╝╚═╝  ╚═══╝ ╚═════╝ ╚═╝  ╚═╝\n";
     std::cout << "  Minimalist Unix-like Shell for Embedded Systems\n";
-    std::cout << "  Version 1.0.0\n\n";
+    std::cout << "  Version 0.0.1\n\n";
 
     // Display system information
     std::cout << "=== System Information ===\n";
