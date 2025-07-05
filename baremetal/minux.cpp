@@ -256,7 +256,6 @@ void display_welcome_banner() {
     std::cout << "  Minimalist Unix-like Shell for Embedded Systems\n";
     std::cout << "  Version 0.0.1\n\n";
 
-    // Display system information
     std::cout << "=== System Information ===\n";
 
     // OS information
@@ -670,7 +669,6 @@ void cmd_ls(const char *path) {
         return;
     }
 
-    // Add a blank line for separation
     printw("\nContents of %s:\n\n", target_path);
 
     // Initialize color pairs for ls
@@ -826,15 +824,8 @@ void cmd_gpio(void) {
     // Keep clear for this command as it's a full-screen display
     clear();
     
-    // Rest of the function remains unchanged
-    // ... existing code ...
 }
 
-// These commands still clear the screen because they are more interactive or full-screen:
-// launch_explorer
-// test_camera
-// serial_monitor
-// cmd_tree and cmd_tree_interactive
 
 // Update handle_command to not clear before running the tree command
 void handle_command(const char *cmd) {
@@ -1855,18 +1846,15 @@ void cleanup(void) {
         }
     }
     
-    // Destroy error console
     error_console_destroy(error_console);
     endwin();
     
-    // Cleanup serial port if it was opened
     cleanup_serial();
     
-    printf("Thank you for using MINUX!\n");
+    printf("MINUX closed!\n");
 }
 
 void draw_status_bar(void) {
-    // Get current time for status bar
     time_t t = time(NULL);
     struct tm *tm = localtime(&t);
     char time_str[32];
@@ -2789,7 +2777,6 @@ void edit_file_contents(const char *filepath) {
     refresh();
 }
 
-// Function to save file
 bool save_file(const std::vector<std::string> &lines, const char *filepath) {
     FILE *file = fopen(filepath, "w");
     if (!file) {
