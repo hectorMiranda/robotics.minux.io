@@ -1,3 +1,10 @@
+/*
+g++ -std=c++17 -o cuda_top cuda_top.cpp \
+    -I/usr/local/cuda/include \
+    -L/usr/local/cuda/lib64 -lcudart -lcuda -lnvidia-ml
+
+*/
+
 #include <cuda_runtime.h>
 #include <nvml.h>
 #include <iostream>
@@ -12,7 +19,6 @@ void clear_screen() {
     std::cout << "\033[2J\033[1;1H";
 }
 
-// Helper to print table headers
 void print_headers() {
     std::cout << std::left
         << std::setw(5) << "ID"
@@ -28,7 +34,6 @@ void print_headers() {
 }
 
 int main() {
-    // Initialize NVML for temperature/utilization
     nvmlReturn_t nvmlRes = nvmlInit();
     bool nvml_available = (nvmlRes == NVML_SUCCESS);
 
@@ -66,8 +71,7 @@ int main() {
 
             int temp = -1, util = -1;
             if (nvml_available) {
-                unsigned int t, u;
-                nvmlTemp_t tval;
+                unsigned int t;
                 nvmlUtilization_t utilinfo;
                 if (nvmlDeviceGetTemperature(nvml_handles[dev], NVML_TEMPERATURE_GPU, &t) == NVML_SUCCESS)
                     temp = t;
