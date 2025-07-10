@@ -146,6 +146,12 @@ void crypto_encrypt(const char *data);
 void crypto_decrypt(const char *data);
 void crypto_show_help(void);
 
+// CUDA command prototypes
+void cmd_cuda(const char *arg);
+void cuda_info(void);
+void cuda_top(void);
+void cuda_help(void);
+
 void init_windows(void);
 void cleanup(void);
 void draw_status_bar(void);
@@ -184,6 +190,7 @@ Command commands[] = {
     {"play", NULL, "Play audio files, notes or scales"}, // Add play command
     {"todo", NULL, "Task management (use 'todo help' for options)"}, // Add todo command
     {"crypto", NULL, "Crypto operations"}, // Add crypto command
+    {"cuda", NULL, "CUDA GPU information and utilities"}, // Add cuda command
     {NULL, NULL, NULL}
 };
 
@@ -1098,6 +1105,17 @@ void handle_command(const char *cmd) {
             cmd_crypto(crypto_arg);
         } else {
             crypto_show_help();
+        }
+        show_prompt();
+    }
+    else if (strcmp(args[0], "cuda") == 0) {
+        if (argc > 1) {
+            // Get the original command string and extract everything after "cuda "
+            const char *cuda_arg = cmd + 5;
+            while (isspace(*cuda_arg)) cuda_arg++;
+            cmd_cuda(cuda_arg);
+        } else {
+            cuda_info();
         }
         show_prompt();
     }
@@ -5124,4 +5142,167 @@ int main(void) {
 
     cleanup();
     return 0;
+}
+
+// CUDA command implementations
+void cmd_cuda(const char *arg) {
+    if (!arg || !*arg) {
+        cuda_info();
+        return;
+    }
+    
+    // Parse arguments
+    char cmd_copy[MAX_CMD_LENGTH];
+    strncpy(cmd_copy, arg, sizeof(cmd_copy) - 1);
+    cmd_copy[sizeof(cmd_copy) - 1] = '\0';
+    
+    char *cmd_name = strtok(cmd_copy, " \t");
+    
+    if (strcmp(cmd_name, "info") == 0) {
+        cuda_info();
+    } else if (strcmp(cmd_name, "top") == 0) {
+        cuda_top();
+    } else if (strcmp(cmd_name, "help") == 0) {
+        cuda_help();
+    } else {
+        log_error(error_console, ERROR_WARNING, "CUDA", "Unknown cuda command: %s", cmd_name);
+        cuda_help();
+    }
+}
+
+void cuda_help(void) {
+    printw("\nCUDA Command Usage:\n");
+    printw("  cuda                 - Show GPU information\n");
+    printw("  cuda info            - Show detailed GPU information\n");
+    printw("  cuda top             - Launch real-time GPU monitor\n");
+    printw("  cuda help            - Show this help message\n\n");
+    refresh();
+}
+
+void cuda_info(void) {
+    printw("\n=== CUDA GPU Information ===\n\n");
+    
+    // First, try to run our external CUDA utilities if they exist
+    char cuda_simple_path[MAX_PATH];
+    snprintf(cuda_simple_path, sizeof(cuda_simple_path), "%s/cuda_simple", "/marcetux/robotics.minux.io/baremetal");
+    
+    // Check if the CUDA utility exists
+    if (access(cuda_simple_path, X_OK) == 0) {
+        printw("Running CUDA device information tool...\n\n");
+        refresh();
+        
+        // Temporarily exit ncurses mode to run external command
+        endwin();
+        
+        // Execute the cuda_simple command
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "cd %s && ./cuda_simple", "/marcetux/robotics.minux.io/baremetal");
+        int result = system(cmd);
+        
+        // Re-initialize ncurses
+        initscr();
+        cbreak();
+        noecho();
+        keypad(stdscr, TRUE);
+        
+        // Re-initialize colors if they were set up
+        if (has_colors()) {
+            start_color();
+            init_pair(1, COLOR_BLUE, COLOR_BLACK);    // Directories
+            init_pair(2, COLOR_GREEN, COLOR_BLACK);   // Executables
+            init_pair(3, COLOR_CYAN, COLOR_BLACK);    // Symlinks
+            init_pair(4, COLOR_YELLOW, COLOR_BLACK);  // Status bar
+            init_pair(5, COLOR_RED, COLOR_BLACK);     // Errors
+            init_pair(6, COLOR_MAGENTA, COLOR_BLACK); // Special files
+        }
+        
+        // Redraw the screen
+        clear();
+        refresh();
+        
+        if (result != 0) {
+            printw("CUDA tool execution failed.\n");
+        }
+        printw("\nPress any key to continue...");
+        refresh();
+        getch();
+        clear();
+    } else {
+        // CUDA utilities not found, provide instructions
+        printw("CUDA utilities not found.\n\n");
+        printw("To use CUDA features:\n");
+        printw("1. Make sure NVIDIA drivers and CUDA toolkit are installed\n");
+        printw("2. Compile the CUDA utilities with:\n");
+        printw("   cd /marcetux/robotics.minux.io/baremetal\n");
+        printw("   g++ -o cuda_simple cuda_simple.cpp -lcudart -lcuda\n\n");
+        printw("3. Then use 'cuda info' for GPU information\n");
+        printw("4. Use 'cuda top' for real-time monitoring\n\n");
+        printw("Alternatively, you can use these external commands:\n");
+        printw("  nvidia-smi       - NVIDIA System Management Interface\n");
+        printw("  nvtop            - GPU process monitor (install with: sudo apt install nvtop)\n");
+        printw("  gpustat          - GPU status monitor (install with: pip install gpustat)\n\n");
+    }
+    refresh();
+}
+
+void cuda_top(void) {
+    // Check if the CUDA top utility exists
+    char cuda_top_path[MAX_PATH];
+    snprintf(cuda_top_path, sizeof(cuda_top_path), "%s/cuda_top", "/marcetux/robotics.minux.io/baremetal");
+    
+    if (access(cuda_top_path, X_OK) == 0) {
+        printw("\n=== CUDA GPU Monitor ===\n\n");
+        printw("Launching real-time GPU monitor...\n");
+        printw("Press Ctrl+C in the monitor to return to MINUX.\n\n");
+        printw("Press any key to continue...");
+        refresh();
+        getch();
+        
+        // Temporarily exit ncurses mode to run external command
+        endwin();
+        
+        // Execute the cuda_top command
+        char cmd[512];
+        snprintf(cmd, sizeof(cmd), "cd %s && ./cuda_top", "/marcetux/robotics.minux.io/baremetal");
+        int result = system(cmd);
+        
+        // Re-initialize ncurses
+        initscr();
+        cbreak();
+        noecho();
+        keypad(stdscr, TRUE);
+        
+        // Re-initialize colors if they were set up
+        if (has_colors()) {
+            start_color();
+            init_pair(1, COLOR_BLUE, COLOR_BLACK);    // Directories
+            init_pair(2, COLOR_GREEN, COLOR_BLACK);   // Executables
+            init_pair(3, COLOR_CYAN, COLOR_BLACK);    // Symlinks
+            init_pair(4, COLOR_YELLOW, COLOR_BLACK);  // Status bar
+            init_pair(5, COLOR_RED, COLOR_BLACK);     // Errors
+            init_pair(6, COLOR_MAGENTA, COLOR_BLACK); // Special files
+        }
+        
+        // Redraw the screen
+        clear();
+        refresh();
+        
+        if (result != 0) {
+            log_error(error_console, ERROR_WARNING, "CUDA", 
+                     "CUDA Top failed with exit code %d", WEXITSTATUS(result));
+        }
+    } else {
+        printw("\n=== CUDA GPU Monitor ===\n\n");
+        printw("CUDA Top utility not found.\n\n");
+        printw("To use the real-time GPU monitor:\n");
+        printw("1. Compile the CUDA utilities with:\n");
+        printw("   cd /marcetux/robotics.minux.io/baremetal\n");
+        printw("   g++ -o cuda_top cuda_top.cpp -lcudart -lcuda -lnvidia-ml\n\n");
+        printw("2. Then use 'cuda top' for real-time monitoring\n\n");
+        printw("Alternative GPU monitoring tools:\n");
+        printw("  nvidia-smi -l 1  - Update every second\n");
+        printw("  nvtop            - Interactive GPU monitor\n");
+        printw("  watch nvidia-smi - Watch nvidia-smi output\n\n");
+    }
+    refresh();
 } 

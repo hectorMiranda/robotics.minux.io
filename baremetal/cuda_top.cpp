@@ -1,8 +1,8 @@
 /*
 g++ -std=c++17 -o cuda_top cuda_top.cpp \
     -I/usr/local/cuda/include \
-    -L/usr/local/cuda/lib64 -lcudart -lcuda -lnvidia-ml
-
+    -L/usr/local/cuda/lib64 -L/usr/local/cuda-12.9/targets/x86_64-linux/lib/stubs \
+    -lcudart -lcuda -lnvidia-ml
 */
 
 #include <cuda_runtime.h>
@@ -32,6 +32,31 @@ void print_headers() {
         << "\n";
     std::cout << std::string(94, '-') << "\n";
 }
+
+void print_process_list(nvmlDevice_t handle) {
+    unsigned int infoCount = 64;
+    std::vector<nvmlProcessInfo_t> infos(infoCount);
+
+    nvmlReturn_t res = nvmlDeviceGetComputeRunningProcesses(handle, &infoCount, infos.data());
+
+    if (res == NVML_SUCCESS && infoCount > 0) {
+        std::cout << "    PID       Used Memory (MB)" << std::endl;
+        for (unsigned int i = 0; i < infoCount; ++i) {
+            std::cout << "    "
+                << std::setw(10) << infos[i].pid
+                << std::setw(10)
+                << (infos[i].usedGpuMemory != (unsigned long long)NVML_VALUE_NOT_AVAILABLE
+                    ? std::to_string(infos[i].usedGpuMemory / (1024 * 1024))
+                    : "N/A")
+                << std::endl;
+        }
+    } else if (infoCount == 0) {
+        std::cout << "    [No compute processes]" << std::endl;
+    }
+}
+
+
+
 
 int main() {
     nvmlReturn_t nvmlRes = nvmlInit();
@@ -89,6 +114,11 @@ int main() {
                 << std::setw(8) << (temp == -1 ? "N/A" : std::to_string(temp) + "C")
                 << std::setw(10) << (util == -1 ? "N/A" : std::to_string(util))
                 << "\n";
+
+            // Add GPU process list:
+            if (nvml_available) {
+                print_process_list(nvml_handles[dev]);
+            }
         }
         std::cout << "\n[Ctrl+C to exit]\n";
         std::this_thread::sleep_for(std::chrono::seconds(1));
