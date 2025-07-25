@@ -1,3 +1,4 @@
+#include <Arduino.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
@@ -6,6 +7,7 @@
 #define SCREEN_HEIGHT 64
 #define OLED_RESET     -1
 #define SCREEN_ADDRESS 0x3C
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 unsigned long lastDemoTime = 0;
@@ -23,8 +25,16 @@ int left_eye_x, left_eye_y, right_eye_x, right_eye_y;
 int left_eye_height, right_eye_height;
 int left_eye_width, right_eye_width;
 
-// --- Eye animation functions ---
-void draw_eyes(bool update = true) {
+void draw_eyes(bool update = true);
+void center_eyes(bool update = true);
+void blink();
+void demo_splash();
+void demo_eyes();
+void demo_fakeClock();
+void demo_bouncingText();
+void demo_loadingBar();
+
+void draw_eyes(bool update) {
   display.clearDisplay();
   display.fillRoundRect(left_eye_x - left_eye_width / 2, left_eye_y - left_eye_height / 2,
                         left_eye_width, left_eye_height, ref_corner_radius, SSD1306_WHITE);
@@ -33,7 +43,7 @@ void draw_eyes(bool update = true) {
   if (update) display.display();
 }
 
-void center_eyes(bool update = true) {
+void center_eyes(bool update) {
   left_eye_height = right_eye_height = ref_eye_height;
   left_eye_width = right_eye_width = ref_eye_width;
   left_eye_x = SCREEN_WIDTH / 2 - ref_eye_width / 2 - ref_space_between_eye / 2;
@@ -46,12 +56,14 @@ void blink() {
   for (int i = 0; i < 3; i++) {
     left_eye_height -= 6;
     right_eye_height -= 6;
-    draw_eyes(); delay(40);
+    draw_eyes();
+    delay(40);
   }
   for (int i = 0; i < 3; i++) {
     left_eye_height += 6;
     right_eye_height += 6;
-    draw_eyes(); delay(40);
+    draw_eyes();
+    delay(40);
   }
 }
 
@@ -117,7 +129,6 @@ void demo_loadingBar() {
   display.display();
 }
 
-// --- Setup & Loop ---
 void setup() {
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
   display.clearDisplay();

@@ -1,0 +1,72 @@
+# PlatformIO specific
+.pio/
+.pioenvs/
+.piolibdeps/
+.platformio/
+.pio.pkg.cache/
+
+# Build artifacts
+*.o
+*.elf
+*.hex
+*.bin
+*.map
+*.lst
+*.lss
+*.sym
+*.tmp
+*.bak
+*.swp
+*.swo
+*~
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+
+# Documentation builds
+docs/_build/
+
+# Python bytecode (if using Python scripts)
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Node.js (if using any Node.js tools)
+node_modules/
+npm-debug.log*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Backup files
+*.backup
+*.orig
+
+# Test files
+test_results/
+*.test
