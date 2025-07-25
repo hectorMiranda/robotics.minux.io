@@ -13,7 +13,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 unsigned long lastDemoTime = 0;
 int demoIndex = 0;
 
-// ===== DEMO CONFIGURATION STRUCT =====
 struct Demo {
   bool enabled;
   unsigned long duration;
@@ -21,7 +20,6 @@ struct Demo {
   void (*function)();
 };
 
-// Forward declare demo functions
 void demo_splash();
 void demo_loadingBar();
 void demo_fakeClock();
@@ -32,22 +30,20 @@ void demo_odometer();
 
 // Demo configuration - easy to manage in one place!
 Demo demos[] = {
-  {false,  200,   "Splash",        demo_splash},
-   {true,  100000, "Odometer",      demo_odometer},
+  {true,  100,   "Splash",        demo_splash},
   {true,  200,   "Loading Bar",   demo_loadingBar},
-  {true,  5000,  "Fake Clock",    demo_fakeClock},
-  {true,  4000,  "Bouncing Text", demo_bouncingText},
-  {true,  5000,  "Eyes",          demo_eyes},
-  {true,  4500,  "Bitmap",        demo_bitmap}
+  {true,  100000, "Odometer",      demo_odometer},
+  {false,  5000,  "Fake Clock",    demo_fakeClock},
+  {false,  4000,  "Bouncing Text", demo_bouncingText},
+  {false,  5000,  "Eyes",          demo_eyes},
+  {false,  4500,  "Bitmap",        demo_bitmap}
 };
 
 const int totalDemos = sizeof(demos) / sizeof(demos[0]);
 
-// Get the next enabled demo index
 int getNextEnabledDemo(int currentIndex) {
   int nextIndex = (currentIndex + 1) % totalDemos;
   
-  // Find next enabled demo
   while (!demos[nextIndex].enabled && nextIndex != currentIndex) {
     nextIndex = (nextIndex + 1) % totalDemos;
   }
@@ -55,11 +51,9 @@ int getNextEnabledDemo(int currentIndex) {
   return nextIndex;
 }
 
-// Helper function to get current demo properties
 Demo& getCurrentDemo() {
   return demos[demoIndex];
 }
-// =======================================
 
 unsigned long startMillis = 0;
 
@@ -138,8 +132,6 @@ const uint8_t myBitmap[] PROGMEM ={
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00
 };
 
-
-// ---------------------------------------------------
 
 void draw_eyes(bool update = true);
 void center_eyes(bool update = true);
@@ -259,6 +251,7 @@ void demo_odometer() {
   static int batteryLevel = 100;
   static int currentState = 0;
   static float speed = 0.0;
+  static bool turboMode = false;
   
   if (odometerStartTime == 0) {
     odometerStartTime = millis();
@@ -266,179 +259,285 @@ void demo_odometer() {
   
   unsigned long elapsed = millis() - odometerStartTime;
   
-  // Cycle through different states every 3 seconds for better visibility
-  currentState = (elapsed / 3000) % 5;
+  // Cycle through different states every 4 seconds for better readability
+  currentState = (elapsed / 4000) % 5;
+  
+  // Simulate turbo mode activation (every 15 seconds for 3 seconds)
+  turboMode = ((elapsed / 1000) % 15) < 3;
   
   display.clearDisplay();
   
-  // ===== DASHBOARD CARD DESIGN =====
+  // ===== CRITICAL FULL-SCREEN ALERTS =====
   
-  // Main card border with rounded corners effect
-  display.drawRect(2, 2, 124, 60, SSD1306_WHITE);
-  display.drawRect(3, 3, 122, 58, SSD1306_WHITE);
+  // BATTERY LOW ALERT (when battery < 20%)
+  if (batteryLevel < 1) {
+    // Animated border effect
+    int borderOffset = (elapsed / 150) % 4;
+    display.drawRect(borderOffset, borderOffset, 128-2*borderOffset, 64-2*borderOffset, SSD1306_WHITE);
+    display.drawRect(borderOffset+1, borderOffset+1, 126-2*borderOffset, 62-2*borderOffset, SSD1306_WHITE);
+    
+    display.setTextSize(2);
+    display.setCursor(5, 8);
+    if ((elapsed / 300) % 2) { // Fast blinking
+      display.println("BATTERY");
+    }
+    display.setTextSize(2);
+    display.setCursor(20, 35);
+    if ((elapsed / 400) % 2) {
+      display.println("LOW!");
+    }
+    
+    // Warning stripes at bottom
+    for(int i = 0; i < 128; i += 8) {
+      if ((i + elapsed/100) % 16 < 8) {
+        display.fillRect(i, 58, 4, 6, SSD1306_WHITE);
+      }
+    }
+    
+    display.setTextSize(1);
+    display.setCursor(48, 50);
+    display.print(batteryLevel);
+    display.print("%");
+    display.display();
+    return;
+  }
   
-  // Header section with title
-  display.fillRect(4, 4, 120, 12, SSD1306_WHITE);
+  // LINE NOT DETECTED (during searching state)
+  if (currentState == 2) {
+    // Scanning radar effect
+    int sweepAngle = (elapsed / 50) % 360;
+    for(int r = 10; r < 60; r += 10) {
+      display.drawCircle(64, 32, r, SSD1306_WHITE);
+    }
+    
+    // Radar sweep line
+    float radians = sweepAngle * 3.14159 / 180;
+    int endX = 64 + 50 * cos(radians);
+    int endY = 32 + 50 * sin(radians);
+    display.drawLine(64, 32, endX, endY, SSD1306_WHITE);
+    
+    display.setTextSize(2);
+    display.setCursor(30, 5);
+    if ((elapsed / 250) % 2) { // Fast blinking
+      display.println("LINE");
+    }
+    display.setCursor(15, 50);
+    if ((elapsed / 350) % 2) {
+      display.println("NOT FOUND");
+    }
+    
+    // Scanning dots
+    display.setTextSize(3);
+    int dots = (elapsed / 300) % 4;
+    display.setCursor(45 + dots * 10, 25);
+    display.print(".");
+    
+    display.display();
+    return;
+  }
+  
+  // TURBO MODE ALERT
+  if (turboMode) {
+    // Speed lines effect
+    for(int i = 0; i < 20; i++) {
+      int lineX = (elapsed/20 + i*15) % 140 - 10;
+      int lineY = 10 + i * 2;
+      if(lineX > 0 && lineX < 128) {
+        display.drawLine(lineX, lineY, lineX + 10, lineY, SSD1306_WHITE);
+      }
+    }
+    
+    // Double border for emphasis
+    display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
+    display.drawRect(2, 2, 124, 60, SSD1306_WHITE);
+    
+    display.setTextSize(3);
+    display.setCursor(15, 15);
+    if ((elapsed / 150) % 2) { // Fast blinking
+      display.println("TURBO");
+    }
+    
+    // Lightning bolt effect
+    if ((elapsed / 100) % 3 == 0) {
+      display.drawLine(10, 45, 15, 50, SSD1306_WHITE);
+      display.drawLine(15, 50, 10, 55, SSD1306_WHITE);
+      display.drawLine(10, 55, 15, 60, SSD1306_WHITE);
+      
+      display.drawLine(118, 45, 113, 50, SSD1306_WHITE);
+      display.drawLine(113, 50, 118, 55, SSD1306_WHITE);
+      display.drawLine(118, 55, 113, 60, SSD1306_WHITE);
+    }
+    
+    display.setTextSize(1);
+    display.setCursor(20, 45);
+    display.println("MAX SPEED MODE");
+    display.setCursor(35, 55);
+    display.println("ENGAGED!");
+    display.display();
+    return;
+  }
+  
+  // ===== CLEAN DASHBOARD DESIGN =====
+  
+  // === TOP ROW: Distance and Battery (well spaced) ===
   display.setTextSize(1);
-  display.setTextColor(SSD1306_BLACK);
-  display.setCursor(6, 6);
-  display.println("Ohm's Revenge Dashboard");
   
-  // Reset text color for rest of display
-  display.setTextColor(SSD1306_WHITE);
-  
-  // Top metrics row (Distance and Battery)
-  display.setCursor(6, 20);
-  display.setTextSize(1);
-  distance += 0.03; // Simulate movement
-  display.print("DIST: ");
+  // Distance - left side with box
+  distance += 0.02; // Slower increment for readability
+  display.drawRect(1, 4, 62, 30, SSD1306_WHITE);
+  display.setCursor(3, 6);
+  display.print("DISTANCE");
+  display.setCursor(3, 16);
+  display.setTextSize(2);
   display.print(distance, 1);
-  display.print("m");
+  display.setTextSize(1);
+  display.setCursor(3, 26);
+  display.print("meters");
   
-  // Battery with visual indicator
-  if (elapsed % 800 == 0 && batteryLevel > 15) {
+  // Battery - right side with box and proper spacing
+  if (elapsed % 200 == 0 && batteryLevel > 5) { // Faster battery drain for demo
     batteryLevel--;
   }
-  display.setCursor(75, 20);
-  display.print("BAT:");
+  
+  // Demo sequence: show different critical alerts at specific times
+  if (elapsed > 6000 && elapsed < 10000) {
+    batteryLevel = 15; // Force low battery alert demo
+  } else if (elapsed >= 14000 && elapsed < 18000) {
+    batteryLevel = 8; // Critical battery alert demo
+  }
+  
+  display.drawRect(65, 4, 62, 30, SSD1306_WHITE);
+  display.setCursor(67, 6);
+  display.print("BATTERY");
+  display.setCursor(67, 16);
+  display.setTextSize(1); // Keep text size small
   display.print(batteryLevel);
   display.print("%");
   
-  // Battery visual bar
-  int batBarWidth = map(batteryLevel, 0, 100, 0, 20);
-  display.drawRect(105, 19, 22, 8, SSD1306_WHITE);
-  display.fillRect(106, 20, batBarWidth, 6, SSD1306_WHITE);
+  // Clean battery bar visualization - positioned below text
+  display.drawRect(67, 24, 48, 8, SSD1306_WHITE);
+  int batBarWidth = map(batteryLevel, 0, 100, 0, 46);
+  if (batBarWidth > 0) {
+    display.fillRect(68, 25, batBarWidth, 6, SSD1306_WHITE);
+  }
   
-  // Speed gauge section
-  display.setCursor(6, 32);
-  display.print("SPEED: ");
+  // === MIDDLE SECTION: Speed and Status with boxes ===
+  // Speed box
+  display.drawRect(1, 37, 62, 26, SSD1306_WHITE);
+  display.setCursor(3, 39);
+  display.print("SPEED:");
+  display.setCursor(3, 49);
   
-  // State-dependent information
+  // Status box
+  display.drawRect(65, 37, 62, 26, SSD1306_WHITE);
+  
+  // State-dependent information with better spacing
   switch(currentState) {
     case 0: // Following path
-      speed = 15.0;
+      speed = turboMode ? 20.0 : 12.0; // Faster in turbo mode
       display.print(speed, 0);
-      display.println(" cm/s");
+      display.print(" cm/s");
       
-      display.setCursor(6, 44);
-      display.println("STATUS: [FOLLOWING PATH]");
-      display.setCursor(6, 54);
-      display.println(">>> SENSORS: ALL CLEAR <<<");
+      display.setCursor(67, 39);
+      display.println("STATUS:");
+      display.setCursor(67, 49);
+      if (turboMode) {
+        display.println("TURBO!");
+      } else {
+        display.println("FOLLOWING");
+      }
       
-      // Path visualization - animated dotted line
-      for(int i = (elapsed/100) % 16; i < 120; i += 16) {
-        display.fillRect(i + 6, 30, 4, 1, SSD1306_WHITE);
+      // Clean path indicator - bottom area
+      for(int i = (elapsed/150) % 8; i < 128; i += 8) {
+        display.fillRect(i, 63, 4, 1, SSD1306_WHITE);
       }
       break;
       
     case 1: // Obstacle detected
       speed = 0.0;
       display.print(speed, 0);
-      display.println(" cm/s");
+      display.print(" cm/s");
       
-      display.setCursor(6, 44);
-      display.println("STATUS: [OBSTACLE ALERT]");
-      display.setCursor(6, 54);
-      display.println("!!! ULTRASONIC: 5CM !!!");
-      
-      // Warning blink effect
-      if ((elapsed / 200) % 2) {
-        display.fillRect(6, 42, 115, 8, SSD1306_WHITE);
-        display.setTextColor(SSD1306_BLACK);
-        display.setCursor(6, 44);
-        display.println("STATUS: [OBSTACLE ALERT]");
-        display.setTextColor(SSD1306_WHITE);
+      display.setCursor(67, 39);
+      display.println("STATUS:");
+      display.setCursor(67, 49);
+      if ((elapsed / 300) % 2) { // Slower blink for readability
+        display.println("OBSTACLE!");
+      } else {
+        display.println("STOP");
       }
       
-      // Danger indicators
-      display.fillCircle(115, 25, 2, SSD1306_WHITE);
-      display.fillCircle(115, 35, 2, SSD1306_WHITE);
-      break;
-      
-    case 2: // Path lost - searching
-      speed = 3.0;
-      display.print(speed, 0);
-      display.println(" cm/s");
-      
-      display.setCursor(6, 44);
-      display.println("STATUS: [SEARCH MODE]");
-      display.setCursor(6, 54);
-      display.println("??? LINE SENSORS LOST ???");
-      
-      // Scanning animation
-      int scanPos = 6 + ((elapsed / 50) % 110);
-      display.drawLine(scanPos, 29, scanPos + 3, 29, SSD1306_WHITE);
-      display.drawLine(scanPos - 1, 30, scanPos + 4, 30, SSD1306_WHITE);
-      break;
-      
-    case 3: // Sharp turn maneuver
-      speed = 8.0;
-      display.print(speed, 0);
-      display.println(" cm/s");
-      
-      display.setCursor(6, 44);
-      display.println("STATUS: [NAVIGATION]");
-      display.setCursor(6, 54);
-      display.println("<<< EXECUTING TURN <<<");
-      
-      // Turn indicator with arrow
-      display.drawLine(6, 32, 15, 28, SSD1306_WHITE);
-      display.drawLine(15, 28, 12, 30, SSD1306_WHITE);
-      display.drawLine(15, 28, 13, 32, SSD1306_WHITE);
-      
-      // Speed bars
-      for(int i = 0; i < 3; i++) {
-        display.fillRect(50 + (i * 8), 32 - (i * 2), 4, 4 + (i * 2), SSD1306_WHITE);
+      // Warning indicators - cleaner
+      if ((elapsed / 500) % 2) {
+        display.fillRect(0, 35, 2, 30, SSD1306_WHITE);
+        display.fillRect(126, 35, 2, 30, SSD1306_WHITE);
       }
       break;
       
-    case 4: // Mission accomplished
+    case 2: // Path lost - searching (this now only shows if not critical)
+      speed = 2.0;
+      display.print(speed, 0);
+      display.print(" cm/s");
+      
+      display.setCursor(67, 39);
+      display.println("STATUS:");
+      display.setCursor(67, 49);
+      display.println("SEARCHING");
+      
+      // Clean scanning animation
+      int scanPos = (elapsed / 80) % 128;
+      display.drawLine(scanPos - 5, 63, scanPos + 5, 63, SSD1306_WHITE);
+      break;
+      
+    case 3: // Navigation/Turn
+      speed = turboMode ? 25.0 : 6.0; // Faster in turbo mode
+      display.print(speed, 0);
+      display.print(" cm/s");
+      
+      display.setCursor(67, 39);
+      display.println("STATUS:");
+      display.setCursor(67, 49);
+      display.println("TURNING");
+      
+      // Clean turn arrow
+      display.drawLine(115, 55, 120, 52, SSD1306_WHITE);
+      display.drawLine(115, 55, 120, 58, SSD1306_WHITE);
+      display.drawLine(115, 55, 125, 55, SSD1306_WHITE);
+      break;
+      
+    case 4: // Mission complete
       speed = 0.0;
       display.print(speed, 0);
-      display.println(" cm/s");
+      display.print(" cm/s");
       
-      display.setCursor(6, 44);
-      display.println("STATUS: [MISSION DONE]");
-      display.setCursor(6, 54);
-      display.println("*** TARGET ACQUIRED ***");
+      display.setCursor(67, 39);
+      display.println("STATUS:");
+      display.setCursor(67, 49);
+      display.println("COMPLETE");
       
-      // Success checkmark animation
-      if ((elapsed / 300) % 2) {
-        display.drawLine(100, 32, 105, 37, SSD1306_WHITE);
-        display.drawLine(105, 37, 115, 27, SSD1306_WHITE);
-        display.drawLine(101, 32, 106, 37, SSD1306_WHITE);
-        display.drawLine(106, 37, 116, 27, SSD1306_WHITE);
-      }
-      
-      // Victory pattern
-      for(int i = 0; i < 5; i++) {
-        display.drawPixel(90 + (i * 8), 30 + (i % 2 * 3), SSD1306_WHITE);
+      // Clean success indicator
+      if ((elapsed / 600) % 2) {
+        display.drawLine(115, 55, 118, 58, SSD1306_WHITE);
+        display.drawLine(118, 58, 125, 51, SSD1306_WHITE);
       }
       break;
   }
   
-  // Speed gauge visual (right side)
-  int speedBarHeight = map((int)speed, 0, 20, 0, 15);
-  display.drawRect(118, 31, 6, 17, SSD1306_WHITE);
-  if (speedBarHeight > 0) {
-    display.fillRect(119, 48 - speedBarHeight, 4, speedBarHeight, SSD1306_WHITE);
-  }
-  
-  // Status LED simulation (top right corner)
-  if (currentState == 0) { // Green equivalent - solid fill
-    display.fillCircle(120, 8, 2, SSD1306_WHITE);
-  } else if (currentState == 1) { // Red equivalent - blinking
-    if ((elapsed / 150) % 2) {
-      display.fillCircle(120, 8, 2, SSD1306_WHITE);
+  // Clean status indicator (top right)
+  if (currentState == 0) { // Normal operation
+    display.fillCircle(122, 3, 3, SSD1306_WHITE);
+  } else if (currentState == 1) { // Alert
+    if ((elapsed / 200) % 2) {
+      display.fillCircle(122, 3, 3, SSD1306_WHITE);
     }
-  } else { // Yellow equivalent - slower blink
-    if ((elapsed / 400) % 2) {
-      display.fillCircle(120, 8, 2, SSD1306_WHITE);
+  } else { // Other states
+    if ((elapsed / 800) % 2) {
+      display.fillCircle(122, 3, 3, SSD1306_WHITE);
     }
   }
   
-  // Reset for next cycle if we've completed all states
-  if (elapsed >= 15000) { // Increased to 15 seconds for better viewing
+  // Reset cycle
+  if (elapsed >= 20000) { // 20 seconds total cycle
     odometerStartTime = millis();
     distance = 0.0;
     batteryLevel = 100;
@@ -464,7 +563,6 @@ void setup() {
 void loop() {
   Demo& currentDemo = getCurrentDemo();
   
-  // Check if current demo is enabled, if not skip to next enabled demo
   if (!currentDemo.enabled) {
     demoIndex = getNextEnabledDemo(demoIndex);
     lastDemoTime = millis();
@@ -476,6 +574,5 @@ void loop() {
     lastDemoTime = millis();
   }
 
-  // Run the current demo function
   currentDemo.function();
 }
