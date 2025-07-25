@@ -7,11 +7,46 @@
 #define SCREEN_HEIGHT 64
 #define OLED_RESET     -1
 #define SCREEN_ADDRESS 0x3C
+#define BUZZER_PIN 9
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 unsigned long lastDemoTime = 0;
 int demoIndex = 0;
+
+// Pirates music global variables
+int piratesNotes[] = {
+  330, 392, 440, 440, 0,     // NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0
+  440, 494, 523, 523, 0,     // NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0
+  523, 587, 494, 494, 0,     // NOTE_C5, NOTE_D5, NOTE_B4, NOTE_B4, 0
+  440, 392, 440, 0,          // NOTE_A4, NOTE_G4, NOTE_A4, 0
+  
+  330, 392, 440, 440, 0,     // Repeat section
+  440, 494, 523, 523, 0,
+  523, 587, 494, 494, 0,
+  440, 392, 440, 0
+};
+
+int piratesDurations[] = {
+  125, 125, 250, 125, 125,
+  125, 125, 250, 125, 125,
+  125, 125, 250, 125, 125,
+  125, 125, 375, 125,
+  
+  125, 125, 250, 125, 125,
+  125, 125, 250, 125, 125,
+  125, 125, 250, 125, 125,
+  125, 125, 375, 125
+};
+
+bool buzzerEnabled = false; 
+
+const int totalPiratesNotes = sizeof(piratesNotes) / sizeof(int);
+unsigned long piratesNoteStartTime = 0;
+int currentPiratesNote = 0;
+bool piratesPlaying = false;
+
+ 
 
 struct Demo {
   bool enabled;
@@ -30,13 +65,13 @@ void demo_odometer();
 
 // Demo configuration - easy to manage in one place!
 Demo demos[] = {
-  {true,  100,   "Splash",        demo_splash},
+  {false,  100,   "Splash",        demo_splash},
   {true,  200,   "Loading Bar",   demo_loadingBar},
-  {true,  100000, "Odometer",      demo_odometer},
-  {false,  5000,  "Fake Clock",    demo_fakeClock},
-  {false,  4000,  "Bouncing Text", demo_bouncingText},
-  {false,  5000,  "Eyes",          demo_eyes},
-  {false,  4500,  "Bitmap",        demo_bitmap}
+  {true,  30000, "Odometer",      demo_odometer},
+  {true,  5000,  "Fake Clock",    demo_fakeClock},
+  {true,  5000,  "Bouncing Text", demo_bouncingText},
+  {true, 5000,  "Eyes",          demo_eyes},
+  {true, 500,  "Bitmap",        demo_bitmap}
 };
 
 const int totalDemos = sizeof(demos) / sizeof(demos[0]);
@@ -143,6 +178,10 @@ void demo_bouncingText();
 void demo_loadingBar();
 void demo_bitmap();
 void demo_odometer();
+void playStartupMelody();
+void playPiratesTheme();
+void playPiratesNoteNonBlocking(int noteIndex);
+void updatePiratesThemeNonBlocking();
 
 void draw_eyes(bool update) {
   display.clearDisplay();
@@ -216,15 +255,60 @@ void demo_fakeClock() {
 void demo_bouncingText() {
   static int x = 0;
   static int dir = 1;
+  static unsigned long lastMove = 0;
+  static bool initialized = false;
+  static bool musicStarted = false;
+  
+  // Initialize once per demo cycle
+  if (!initialized) {
+    x = 0;
+    dir = 1;
+    lastMove = millis();
+    musicStarted = false;
+    
+    // Reset Pirates music system
+    piratesPlaying = false;
+    currentPiratesNote = 0;
+    noTone(BUZZER_PIN);
+    
+    initialized = true;
+  }
+  
+  // Start Pirates music if not already started and buzzer is enabled
+  if (buzzerEnabled && !musicStarted && !piratesPlaying) {
+    currentPiratesNote = 0;
+    playPiratesNoteNonBlocking(0);
+    musicStarted = true;
+  }
+  
+  // Update Pirates music non-blocking
+  updatePiratesThemeNonBlocking();
+  
+  // Move text every 50ms for smooth animation
+  if (millis() - lastMove >= 50) {
+    x += dir * 2;
+    
+    // Bounce off edges - adjust for "Ohm's Revenge" text width
+    if (x <= 0) {
+      dir = 1;
+    }
+    if (x >= SCREEN_WIDTH - 120) { // Width for "Ohm's Revenge" text
+      dir = -1;
+    }
+    
+    lastMove = millis();
+  }
+  
+  // Display the bouncing text
   display.clearDisplay();
   display.setTextSize(2);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(x, SCREEN_HEIGHT / 2);
+  display.setCursor(x, SCREEN_HEIGHT / 2 - 8);
   display.print("Ohm's Revenge");
   display.display();
-
-  x += dir * 3;
-  if (x <= 0 || x >= SCREEN_WIDTH - 60) dir *= -1;
+  
+  // Reset initialization when demo switches (handled by main loop demo timing)
+  // Static variables will persist until next demo cycle
 }
 
 void demo_loadingBar() {
@@ -243,6 +327,166 @@ void demo_bitmap() {
   display.clearDisplay();
   display.drawBitmap(0, 0, myBitmap, 128, 64, SSD1306_WHITE);
   display.display();
+}
+
+void playStartupMelody() {
+  // Check if buzzer is enabled
+  if (!buzzerEnabled) return;
+  
+  // Define notes (frequencies in Hz)
+  #define NOTE_C4  262
+  #define NOTE_D4  294
+  #define NOTE_E4  330
+  #define NOTE_F4  349
+  #define NOTE_G4  392
+  #define NOTE_A4  440
+  #define NOTE_B4  494
+  #define NOTE_C5  523
+  
+  // Startup melody: "Robot Boot Sequence"
+  int melody[] = {
+    NOTE_C4, NOTE_E4, NOTE_G4, NOTE_C5,  // Rising arpeggio
+    NOTE_G4, NOTE_E4, NOTE_C4,           // Quick descent
+    NOTE_F4, NOTE_A4, NOTE_C5,           // Power up sound
+    NOTE_C5, NOTE_C5                     // Ready beeps
+  };
+  
+  int noteDurations[] = {
+    150, 150, 150, 300,   // Arpeggio timing
+    100, 100, 200,        // Quick descent
+    150, 150, 400,        // Power up
+    200, 200              // Ready beeps
+  };
+  
+  // Play the melody
+  for (int i = 0; i < 12; i++) {
+    tone(BUZZER_PIN, melody[i], noteDurations[i]);
+    delay(noteDurations[i] + 50); // Small pause between notes
+  }
+  
+  noTone(BUZZER_PIN); // Stop any lingering tone
+}
+
+void playPiratesTheme() {
+  // Define all note frequencies
+  #define NOTE_C4 262
+  #define NOTE_D4 294
+  #define NOTE_E4 330
+  #define NOTE_F4 349
+  #define NOTE_G4 392
+  #define NOTE_A4 440
+  #define NOTE_B4 494
+  #define NOTE_C5 523
+  #define NOTE_D5 587
+  #define NOTE_E5 659
+  #define NOTE_F5 698
+  #define NOTE_G5 784
+  #define NOTE_A5 880
+  #define NOTE_B5 988
+
+  // Pirates of the Caribbean theme notes
+  int notes[] = {
+    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
+    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
+    NOTE_C5, NOTE_D5, NOTE_B4, NOTE_B4, 0,
+    NOTE_A4, NOTE_G4, NOTE_A4, 0,
+
+    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
+    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
+    NOTE_C5, NOTE_D5, NOTE_B4, NOTE_B4, 0,
+    NOTE_A4, NOTE_G4, NOTE_A4, 0,
+
+    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
+    NOTE_A4, NOTE_C5, NOTE_D5, NOTE_D5, 0,
+    NOTE_D5, NOTE_E5, NOTE_F5, NOTE_F5, 0,
+    NOTE_E5, NOTE_D5, NOTE_E5, NOTE_A4, 0,
+
+    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
+    NOTE_D5, NOTE_E5, NOTE_A4, 0,
+    NOTE_A4, NOTE_C5, NOTE_B4, NOTE_B4, 0,
+    NOTE_C5, NOTE_A4, NOTE_B4, 0
+  };
+
+  // Note durations
+  int durations[] = {
+    125, 125, 250, 125, 125,
+    125, 125, 250, 125, 125,
+    125, 125, 250, 125, 125,
+    125, 125, 375, 125,
+
+    125, 125, 250, 125, 125,
+    125, 125, 250, 125, 125,
+    125, 125, 250, 125, 125,
+    125, 125, 375, 125,
+
+    125, 125, 250, 125, 125,
+    125, 125, 250, 125, 125,
+    125, 125, 250, 125, 125,
+    125, 125, 125, 250, 125,
+
+    125, 125, 250, 125, 125,
+    250, 125, 250, 125,
+    125, 125, 250, 125, 125,
+    125, 125, 375, 375
+  };
+
+  const int totalNotes = sizeof(notes) / sizeof(int);
+  
+  // Play the melody
+  for (int i = 0; i < totalNotes; i++) {
+    if (notes[i] != 0) {
+      tone(BUZZER_PIN, notes[i], durations[i]);
+    } else {
+      noTone(BUZZER_PIN);
+    }
+    delay(durations[i]);
+  }
+  
+  noTone(BUZZER_PIN); // Stop any lingering tone
+}
+
+void playPiratesNoteNonBlocking(int noteIndex) {
+  // Check if buzzer is enabled
+  if (!buzzerEnabled) return;
+  
+  if (noteIndex < totalPiratesNotes) {
+    piratesNoteStartTime = millis();
+    currentPiratesNote = noteIndex;
+    piratesPlaying = true;
+    
+    if (piratesNotes[noteIndex] != 0) {
+      tone(BUZZER_PIN, piratesNotes[noteIndex]);
+    } else {
+      noTone(BUZZER_PIN);
+    }
+  }
+}
+
+void updatePiratesThemeNonBlocking() {
+  // Check if buzzer is enabled
+  if (!buzzerEnabled) {
+    piratesPlaying = false;
+    currentPiratesNote = 0;
+    noTone(BUZZER_PIN);
+    return;
+  }
+  
+  if (piratesPlaying && currentPiratesNote < totalPiratesNotes) {
+    // Check if current note duration has elapsed
+    if (millis() - piratesNoteStartTime >= piratesDurations[currentPiratesNote]) {
+      currentPiratesNote++;
+      
+      if (currentPiratesNote < totalPiratesNotes) {
+        // Play next note
+        playPiratesNoteNonBlocking(currentPiratesNote);
+      } else {
+        // Song finished
+        noTone(BUZZER_PIN);
+        piratesPlaying = false;
+        currentPiratesNote = 0;
+      }
+    }
+  }
 }
 
 void demo_odometer() {
@@ -485,8 +729,10 @@ void demo_odometer() {
       display.println("SEARCHING");
       
       // Clean scanning animation
-      int scanPos = (elapsed / 80) % 128;
-      display.drawLine(scanPos - 5, 63, scanPos + 5, 63, SSD1306_WHITE);
+      {
+        int scanPos = (elapsed / 80) % 128;
+        display.drawLine(scanPos - 5, 63, scanPos + 5, 63, SSD1306_WHITE);
+      }
       break;
       
     case 3: // Navigation/Turn
@@ -547,6 +793,12 @@ void demo_odometer() {
 }
 
 void setup() {
+  // Initialize buzzer pin
+  pinMode(BUZZER_PIN, OUTPUT);
+  
+  // Play startup melody
+  playStartupMelody();
+  
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
@@ -558,10 +810,24 @@ void setup() {
 
   startMillis = millis();
   lastDemoTime = millis();
+  
+  // Start with the first enabled demo AFTER splash (index 1 = Loading Bar)
+  demoIndex = 1; // Skip splash and start with Loading Bar regardless of splash enabled/disabled
+  // Ensure the demo we're starting with is actually enabled
+  if (!demos[demoIndex].enabled) {
+    demoIndex = getNextEnabledDemo(demoIndex);
+  }
 }
 
 void loop() {
   Demo& currentDemo = getCurrentDemo();
+  
+  // Force stop all buzzer sounds if disabled
+  if (!buzzerEnabled) {
+    noTone(BUZZER_PIN);
+    piratesPlaying = false;
+    currentPiratesNote = 0;
+  }
   
   if (!currentDemo.enabled) {
     demoIndex = getNextEnabledDemo(demoIndex);
