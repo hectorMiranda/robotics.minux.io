@@ -3,12 +3,14 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 
+
 #define SCREEN_WIDTH 128
 #define SCREEN_HEIGHT 64
 #define OLED_RESET     -1
 #define SCREEN_ADDRESS 0x3C
 #define BUZZER_PIN 9
 #define BUTTON_PIN 2
+#define BUTTON2_PIN 10
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -32,115 +34,11 @@ int demoIndex = 0;
 #define NOTE_A5 880
 #define NOTE_B5 988
 
+// Use melodies from the library
+const int* piratesNotes = ::piratesNotes;
+const int* piratesDurations = ::piratesDurations;
+const int totalPiratesNotes = ::totalPiratesNotes;
 
-
-int piratesNotes[] = {
-    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
-    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
-    NOTE_C5, NOTE_D5, NOTE_B4, NOTE_B4, 0,
-    NOTE_A4, NOTE_G4, NOTE_A4, 0,
-
-    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
-    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
-    NOTE_C5, NOTE_D5, NOTE_B4, NOTE_B4, 0,
-    NOTE_A4, NOTE_G4, NOTE_A4, 0,
-
-    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
-    NOTE_A4, NOTE_C5, NOTE_D5, NOTE_D5, 0,
-    NOTE_D5, NOTE_E5, NOTE_F5, NOTE_F5, 0,
-    NOTE_E5, NOTE_D5, NOTE_E5, NOTE_A4, 0,
-
-    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
-    NOTE_D5, NOTE_E5, NOTE_A4, 0,
-    NOTE_A4, NOTE_C5, NOTE_B4, NOTE_B4, 0,
-    NOTE_C5, NOTE_A4, NOTE_B4, 0,
-
-    NOTE_A4, NOTE_A4,
-    //Repeat of first part
-    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
-    NOTE_C5, NOTE_D5, NOTE_B4, NOTE_B4, 0,
-    NOTE_A4, NOTE_G4, NOTE_A4, 0,
-
-    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
-    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
-    NOTE_C5, NOTE_D5, NOTE_B4, NOTE_B4, 0,
-    NOTE_A4, NOTE_G4, NOTE_A4, 0,
-
-    NOTE_E4, NOTE_G4, NOTE_A4, NOTE_A4, 0,
-    NOTE_A4, NOTE_C5, NOTE_D5, NOTE_D5, 0,
-    NOTE_D5, NOTE_E5, NOTE_F5, NOTE_F5, 0,
-    NOTE_E5, NOTE_D5, NOTE_E5, NOTE_A4, 0,
-
-    NOTE_A4, NOTE_B4, NOTE_C5, NOTE_C5, 0,
-    NOTE_D5, NOTE_E5, NOTE_A4, 0,
-    NOTE_A4, NOTE_C5, NOTE_B4, NOTE_B4, 0,
-    NOTE_C5, NOTE_A4, NOTE_B4, 0,
-    //End of Repeat
-
-    NOTE_E5, 0, 0, NOTE_F5, 0, 0,
-    NOTE_E5, NOTE_E5, 0, NOTE_G5, 0, NOTE_E5, NOTE_D5, 0, 0,
-    NOTE_D5, 0, 0, NOTE_C5, 0, 0,
-    NOTE_B4, NOTE_C5, 0, NOTE_B4, 0, NOTE_A4,
-
-    NOTE_E5, 0, 0, NOTE_F5, 0, 0,
-    NOTE_E5, NOTE_E5, 0, NOTE_G5, 0, NOTE_E5, NOTE_D5, 0, 0,
-    NOTE_D5, 0, 0, NOTE_C5, 0, 0,
-    NOTE_B4, NOTE_C5, 0, NOTE_B4, 0, NOTE_A4};
-
-int piratesDurations[] = {
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 375, 125,
-
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 375, 125,
-
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 125, 250, 125,
-
-    125, 125, 250, 125, 125,
-    250, 125, 250, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 375, 375,
-
-    250, 125,
-    //Rpeat of First Part
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 375, 125,
-
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 375, 125,
-
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 125, 250, 125,
-
-    125, 125, 250, 125, 125,
-    250, 125, 250, 125,
-    125, 125, 250, 125, 125,
-    125, 125, 375, 375,
-    //End of Repeat
-
-    250, 125, 375, 250, 125, 375,
-    125, 125, 125, 125, 125, 125, 125, 125, 375,
-    250, 125, 375, 250, 125, 375,
-    125, 125, 125, 125, 125, 500,
-
-    250, 125, 375, 250, 125, 375,
-    125, 125, 125, 125, 125, 125, 125, 125, 375,
-    250, 125, 375, 250, 125, 375,
-    125, 125, 125, 125, 125, 500};
-
-const int totalPiratesNotes = sizeof(piratesNotes) / sizeof(int);
 unsigned long piratesNoteStartTime = 0;
 int currentPiratesNote = 0;
 bool piratesPlaying = false;
@@ -150,6 +48,14 @@ bool lastButtonState = HIGH;
 bool currentButtonState = HIGH;
 unsigned long lastDebounceTime = 0;
 unsigned long debounceDelay = 50;
+
+// Button 2 variables
+bool lastButton2State = HIGH;
+bool currentButton2State = HIGH;
+unsigned long lastDebounce2Time = 0;
+bool showUpArrow = false;
+unsigned long arrowDisplayTime = 0;
+unsigned long arrowDisplayDuration = 1000; // Show arrow for 1 second
 
  
 
@@ -287,6 +193,7 @@ void playStartupMelody();
 void playPiratesTheme();
 void playPiratesNoteNonBlocking(int noteIndex);
 void updatePiratesThemeNonBlocking();
+void drawUpArrow();
 
 void draw_eyes(bool update) {
   display.clearDisplay();
@@ -573,6 +480,30 @@ void updatePiratesThemeNonBlocking() {
       currentPiratesNote = 0;
     }
   }
+}
+
+void drawUpArrow() {
+  // Clear display and draw a large up arrow
+  display.clearDisplay();
+  
+  // Draw arrow shaft (vertical line)
+  display.fillRect(60, 30, 8, 20, SSD1306_WHITE);
+  
+  // Draw arrow head (triangle pointing up)
+  // Top point
+  display.drawLine(64, 15, 64, 15, SSD1306_WHITE);
+  // Arrow head lines
+  for(int i = 0; i < 15; i++) {
+    display.drawLine(64-i, 15+i, 64+i, 15+i, SSD1306_WHITE);
+  }
+  
+  // Add some text below
+  display.setTextSize(1);
+  display.setTextColor(SSD1306_WHITE);
+  display.setCursor(45, 55);
+  display.println("UP ARROW");
+  
+  display.display();
 }
 
 void demo_odometer() {
@@ -882,8 +813,9 @@ void setup() {
   // Initialize buzzer pin
   pinMode(BUZZER_PIN, OUTPUT);
   
-  // Initialize button pin with internal pullup
+  // Initialize button pins with internal pullup
   pinMode(BUTTON_PIN, INPUT_PULLUP);
+  pinMode(BUTTON2_PIN, INPUT_PULLUP);
   
   // Removed startup melody to prevent button interference
   // playStartupMelody();
@@ -930,11 +862,48 @@ void handleButton() {
   lastButtonState = reading;
 }
 
+void handleButton2() {
+  // Read the second button state
+  int reading = digitalRead(BUTTON2_PIN);
+  
+  // Check if button state changed (for debouncing)
+  if (reading != lastButton2State) {
+    lastDebounce2Time = millis();
+  }
+  
+  // If enough time has passed since last state change, consider it a stable reading
+  if ((millis() - lastDebounce2Time) > debounceDelay) {
+    // If button state has changed from HIGH to LOW (button pressed)
+    if (currentButton2State == HIGH && reading == LOW) {
+      // Show up arrow for specified duration
+      showUpArrow = true;
+      arrowDisplayTime = millis();
+      drawUpArrow();
+    }
+    currentButton2State = reading;
+  }
+  
+  lastButton2State = reading;
+}
+
 void loop() {
   Demo& currentDemo = getCurrentDemo();
   
   // Handle button presses first
   handleButton();
+  handleButton2();
+  
+  // Check if we should stop showing the up arrow
+  if (showUpArrow && (millis() - arrowDisplayTime >= arrowDisplayDuration)) {
+    showUpArrow = false;
+    // Force demo to redraw by resetting the demo timer
+    lastDemoTime = millis() - currentDemo.duration + 100; // Give 100ms to show current demo
+  }
+  
+  // If showing up arrow, don't run demos
+  if (showUpArrow) {
+    return;
+  }
   
   // Removed automatic Pirates music updates - music now only plays on button press
   // if (piratesPlaying) {
