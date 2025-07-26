@@ -66,7 +66,7 @@ struct Demo {
   void (*function)();
 };
 
-void demo_splash();
+void booting();
 void demo_loadingBar();
 void demo_fakeClock();
 void demo_bouncingText();
@@ -76,7 +76,7 @@ void demo_odometer();
 
 // Demo configuration - easy to manage in one place!
 Demo demos[] = {
-  {false,  100,   "Splash",        demo_splash},
+  {true,  2000,   "Splash",        booting},
   {true,  200,   "Loading Bar",   demo_loadingBar},
   {true,  30000, "Odometer",      demo_odometer},
   {true,  5000,  "Fake Clock",    demo_fakeClock},
@@ -182,7 +182,7 @@ const uint8_t myBitmap[] PROGMEM ={
 void draw_eyes(bool update = true);
 void center_eyes(bool update = true);
 void blink();
-void demo_splash();
+void booting();
 void demo_eyes();
 void demo_fakeClock();
 void demo_bouncingText();
@@ -228,12 +228,17 @@ void blink() {
   }
 }
 
-void demo_splash() {
+void booting() {
   display.clearDisplay();
-  display.setTextSize(2);
+  display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(15, 25);
-  display.println("minux.io");
+  display.setCursor(0, 0);
+  display.println(F("Minux RTOS v0.1"));
+  display.println(F("https://minux.io"));
+  display.println();
+  display.println(F("Detecting hardware..."));
+  display.println(F("Arduino NANO"));
+  display.println(F("Starting..."));
   display.display();
 }
 
@@ -820,13 +825,8 @@ void setup() {
   // playStartupMelody();
   
   display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS);
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-  display.setTextSize(2);
-  display.setCursor(15, 25);
-  display.println("minux.io");
-  display.display();
-  delay(500); // Show splash
+  booting();
+  delay(5000); // Show splash
 
   startMillis = millis();
   lastDemoTime = millis();
