@@ -289,11 +289,10 @@ void demo_bouncingText() {
   if (millis() - lastMove >= 50) {
     x += dir * 2;
     
-    // Bounce off edges - adjust for "Ohm's Revenge" text width
     if (x <= 0) {
       dir = 1;
     }
-    if (x >= SCREEN_WIDTH - 120) { // Width for "Ohm's Revenge" text
+    if (x >= SCREEN_WIDTH - 120) { 
       dir = -1;
     }
     
@@ -305,7 +304,7 @@ void demo_bouncingText() {
   display.setTextSize(2);
   display.setTextColor(SSD1306_WHITE);
   display.setCursor(x, SCREEN_HEIGHT / 2 - 8);
-  display.print("Ohm's Revenge");
+  display.print("Minux.io");
   display.display();
 }
 

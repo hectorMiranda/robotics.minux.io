@@ -122,10 +122,10 @@ pio device monitor --port COM3 --baud 9600
 
 | # | Name           | Description                       |
 |---|----------------|-----------------------------------|
-| 0 | Splash         | Shows `minux.io`                  |
+| 0 | Splash         | Shows `MARCETUX`                  |
 | 1 | Loading Bar    | Fake loading animation            |
 | 2 | Fake Clock     | Ticking up with timestamp         |
-| 3 | Bouncing Text  | "Ohm's Revenge" bounces on screen |
+| 3 | Bouncing Text  | "minux.io" bounces on screen |
 | 4 | Robot Eyes     | Blinking eye animation            |
 
 ---
